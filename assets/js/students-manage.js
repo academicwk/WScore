@@ -55,7 +55,7 @@ function renderStudentTable(students) {
       (s) => `
     <tr class="border-b border-gray-100">
       <td class="px-4 py-3 font-medium text-wsecondary">${s.StudentID}</td>
-      <td class="px-4 py-3 text-gray-700">${s.PrefixName}${s.FullName}</td>
+      <td class="px-4 py-3 text-gray-700">${s.PrefixName}${s.FirstName} ${s.LastName}</td>
       <td class="px-4 py-3 text-gray-600">${s.Gender}</td>
       <td class="px-4 py-3 text-gray-600">${formatDate(s.BirthDate)}</td>
       <td class="px-4 py-3 text-center">
@@ -103,7 +103,8 @@ function openStudentModal(mode, data) {
     document.getElementById("f-studentId").value = data.StudentID;
     document.getElementById("f-citizenId").value = data.CitizenID || "";
     document.getElementById("f-prefixName").value = data.PrefixName;
-    document.getElementById("f-fullName").value = data.FullName;
+    document.getElementById("f-firstName").value = data.FirstName;
+    document.getElementById("f-lastName").value = data.LastName;
     document.getElementById("f-birthDate").value = formatDateForInput(data.BirthDate);
     document.getElementById("f-religion").value = data.Religion || "";
     document.getElementById("f-fatherName").value = data.FatherName || "";
@@ -140,7 +141,8 @@ async function handleSubmitStudent(e) {
     studentId: document.getElementById("f-studentId").value.trim(),
     citizenId: document.getElementById("f-citizenId").value.trim(),
     prefixName: document.getElementById("f-prefixName").value,
-    fullName: document.getElementById("f-fullName").value.trim(),
+    firstName: document.getElementById("f-firstName").value.trim(),
+    lastName: document.getElementById("f-lastName").value.trim(),
     gender: document.getElementById("f-gender").value,
     birthDate: document.getElementById("f-birthDate").value,
     religion: document.getElementById("f-religion").value.trim(),
