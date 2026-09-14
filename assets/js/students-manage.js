@@ -88,7 +88,8 @@ function handleSearch() {
   const filtered = allStudents.filter(
     (s) =>
       String(s.StudentID).toLowerCase().includes(keyword) ||
-      String(s.FullName).toLowerCase().includes(keyword)
+      String(s.FirstName || "").toLowerCase().includes(keyword) ||
+      String(s.LastName || "").toLowerCase().includes(keyword)
   );
   renderStudentTable(filtered);
 }
