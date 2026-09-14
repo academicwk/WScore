@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>W-Score</title>
+</head>
+<body>
+<script>
+  // ถ้า Login ค้างอยู่แล้ว ให้เข้าหน้าหลักทันที ไม่ต้อง Login ซ้ำ
+  var userData = sessionStorage.getItem("wscore_user");
+  window.location.replace(userData ? "dashboard.html" : "login.html");
+</script>
+</body>
+</html>
