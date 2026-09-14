@@ -3,8 +3,6 @@
  * เชื่อมต่อกับ Google Apps Script Web App (ทำหน้าที่เป็น Backend API)
  */
 
-// TODO: แก้ไข URL นี้เป็น Web App URL จริงหลัง Deploy Google Apps Script แล้ว
-const GAS_API_URL = "https://script.google.com/macros/s/AKfycbz-8xNX3j0o__QyrJVg31eGFR8Mkgj3bUQotmeRCOsDJLUMxNOIu75tPXkuKTH8yubv/exec";
 
 document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("yearNow").textContent = new Date().getFullYear() + 543;
@@ -46,17 +44,7 @@ document.addEventListener("DOMContentLoaded", function () {
     setLoading(true);
 
     try {
-      const response = await fetch(GAS_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain;charset=utf-8" },
-        body: JSON.stringify({
-          action: "login",
-          username: username,
-          password: password,
-        }),
-      });
-
-      const result = await response.json();
+      const result = await callApi("login", { username, password });
 
       if (result.status === "success") {
         // เก็บข้อมูล Session ของผู้ใช้งาน (User + Roles) ไว้ใช้ทั่วทั้งระบบ
