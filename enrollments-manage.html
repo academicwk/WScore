@@ -79,26 +79,32 @@
           <input type="hidden" id="f-isEdit" value="0">
           <input type="hidden" id="f-enrollmentId" value="">
 
-          <div id="f-studentSingleWrap" class="hidden">
-            <label class="block text-sm font-medium text-gray-700 mb-1">นักเรียน</label>
-            <select id="f-studentId" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-100" disabled></select>
+          <div id="f-editWrap" class="hidden space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">นักเรียน</label>
+              <select id="f-studentId" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-100" disabled></select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">เลขที่ในห้อง</label>
+              <input id="f-studentNumber" type="number" min="1"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
           </div>
 
-          <div id="f-studentMultiWrap">
-            <label class="block text-sm font-medium text-gray-700 mb-1">เลือกนักเรียน (เลือกได้หลายคน)</label>
-            <input id="f-studentSearch" type="text" placeholder="ค้นหาชื่อ/รหัสนักเรียน..."
-                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30">
-            <div class="flex items-center justify-between mb-2">
-              <label class="flex items-center gap-2 text-sm text-gray-600">
-                <input type="checkbox" id="f-selectAll">
-                เลือกทั้งหมด
-              </label>
-              <span id="selectedCount" class="text-xs text-gray-400">เลือกแล้ว 0 คน</span>
+          <div id="f-importWrap">
+            <label class="block text-sm font-medium text-gray-700 mb-1">นำเข้ารายชื่อนักเรียนจากไฟล์ Excel</label>
+            <button type="button" id="downloadTemplateBtn" class="text-xs text-wprimary hover:underline mb-2">
+              <i class="fa-solid fa-download"></i> ดาวน์โหลดแบบฟอร์มเทมเพลต (.xlsx)
+            </button>
+            <input id="f-importFile" type="file" accept=".xlsx,.xls,.csv"
+                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            <p class="text-xs text-gray-400 mt-2">ไฟล์ต้องมีคอลัมน์หัวข้อ "รหัสประจำตัวนักเรียน" ระบุรหัสนักเรียน 1 คนต่อ 1 แถว ระบบจะจัดเรียงเลขที่ในห้องให้อัตโนมัติตามเลขประจำตัวนักเรียนจากน้อยไปมาก</p>
+
+            <div id="importPreview" class="mt-3 hidden">
+              <p class="text-sm font-medium text-gray-700 mb-1">รายชื่อที่พร้อมนำเข้า (<span id="importValidCount">0</span> คน)</p>
+              <div id="importPreviewList" class="border border-gray-200 rounded-lg max-h-48 overflow-y-auto divide-y divide-gray-100 text-sm"></div>
+              <p id="importInvalidNote" class="text-xs text-red-500 mt-1 hidden"></p>
             </div>
-            <div id="studentCheckboxList" class="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
-              <div class="text-center text-gray-400 text-sm py-4">กำลังโหลดรายชื่อ...</div>
-            </div>
-            <p class="text-xs text-gray-400 mt-2">ระบบจะกำหนดเลขที่ในห้องให้อัตโนมัติ โดยเรียงตามเลขประจำตัวนักเรียนจากน้อยไปมาก</p>
           </div>
 
           <div id="f-studentNumberWrap" class="hidden">
