@@ -78,16 +78,31 @@
           <input type="hidden" id="f-isEdit" value="0">
           <input type="hidden" id="f-enrollmentId" value="">
 
-          <div>
+          <div id="f-studentSingleWrap" class="hidden">
             <label class="block text-sm font-medium text-gray-700 mb-1">นักเรียน</label>
-            <select id="f-studentId" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
-              <option value="">- เลือกนักเรียน -</option>
-            </select>
+            <select id="f-studentId" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-100" disabled></select>
           </div>
 
-          <div>
+          <div id="f-studentMultiWrap">
+            <label class="block text-sm font-medium text-gray-700 mb-1">เลือกนักเรียน (เลือกได้หลายคน)</label>
+            <input id="f-studentSearch" type="text" placeholder="ค้นหาชื่อ/รหัสนักเรียน..."
+                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            <div class="flex items-center justify-between mb-2">
+              <label class="flex items-center gap-2 text-sm text-gray-600">
+                <input type="checkbox" id="f-selectAll">
+                เลือกทั้งหมด
+              </label>
+              <span id="selectedCount" class="text-xs text-gray-400">เลือกแล้ว 0 คน</span>
+            </div>
+            <div id="studentCheckboxList" class="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+              <div class="text-center text-gray-400 text-sm py-4">กำลังโหลดรายชื่อ...</div>
+            </div>
+            <p class="text-xs text-gray-400 mt-2">ระบบจะกำหนดเลขที่ในห้องให้อัตโนมัติ โดยเรียงตามเลขประจำตัวนักเรียนจากน้อยไปมาก</p>
+          </div>
+
+          <div id="f-studentNumberWrap" class="hidden">
             <label class="block text-sm font-medium text-gray-700 mb-1">เลขที่ในห้อง</label>
-            <input id="f-studentNumber" type="number" min="1" required
+            <input id="f-studentNumber" type="number" min="1"
                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
           </div>
 
