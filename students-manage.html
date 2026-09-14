@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>จัดการข้อมูลนักเรียน - W-Score</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/js/theme.config.js"></script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body class="font-sans bg-gray-50">
+
+  <div id="app-header"></div>
+  <div id="app-sidebar"></div>
+
+  <main class="pt-16 lg:pl-64 min-h-screen transition-all">
+    <div class="p-4 sm:p-6">
+
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h1 class="text-lg font-bold text-wsecondary">
+          <i class="fa-solid fa-user-graduate text-wprimary mr-2"></i>จัดการข้อมูลนักเรียน
+        </h1>
+        <div class="flex items-center gap-2">
+          <input id="searchInput" type="text" placeholder="ค้นหารหัส/ชื่อนักเรียน"
+                 class="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30 w-full sm:w-56">
+          <button id="addStudentBtn" class="flex items-center gap-2 bg-wprimary hover:bg-wprimary-dark text-white text-sm font-medium px-4 py-2 rounded-lg transition whitespace-nowrap">
+            <i class="fa-solid fa-plus"></i>
+            <span class="hidden sm:inline">เพิ่มนักเรียน</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+              <tr>
+                <th class="px-4 py-3 text-left">เลขประจำตัว</th>
+                <th class="px-4 py-3 text-left">ชื่อ-นามสกุล</th>
+                <th class="px-4 py-3 text-left">เพศ</th>
+                <th class="px-4 py-3 text-left">วันเกิด</th>
+                <th class="px-4 py-3 text-center">สถานะ</th>
+                <th class="px-4 py-3 text-right">การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="studentTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Modal เพิ่ม/แก้ไขนักเรียน -->
+  <div id="studentModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/40" onclick="closeStudentModal()"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 id="modalTitle" class="font-semibold text-wsecondary">เพิ่มนักเรียนใหม่</h2>
+          <button onclick="closeStudentModal()" class="text-gray-400 hover:text-gray-600">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+
+        <form id="studentForm" class="p-5 space-y-4">
+          <input type="hidden" id="f-isEdit" value="0">
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">เลขประจำตัวนักเรียน</label>
+              <input id="f-studentId" type="text" required
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">เลขบัตรประชาชน</label>
+              <input id="f-citizenId" type="text" maxlength="13"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">คำนำหน้า</label>
+              <select id="f-prefixName" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+                <option value="เด็กชาย">เด็กชาย</option>
+                <option value="เด็กหญิง">เด็กหญิง</option>
+                <option value="นาย">นาย</option>
+                <option value="นางสาว">นางสาว</option>
+              </select>
+            </div>
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อ-นามสกุล</label>
+              <input id="f-fullName" type="text" required
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">เพศ</label>
+              <select id="f-gender" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+                <option value="ชาย">ชาย</option>
+                <option value="หญิง">หญิง</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">วันเกิด</label>
+              <input id="f-birthDate" type="date"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">ศาสนา</label>
+              <input id="f-religion" type="text"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อ-สกุลบิดา</label>
+              <input id="f-fatherName" type="text"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อ-สกุลมารดา</label>
+              <input id="f-motherName" type="text"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">โรงเรียนเดิม</label>
+              <input id="f-previousSchool" type="text"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">จังหวัดโรงเรียนเดิม</label>
+              <input id="f-previousSchoolProvince" type="text"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">ชั้นเรียนสุดท้าย</label>
+              <input id="f-lastGradeLevel" type="text" placeholder="เช่น ป.6"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">สถานะ</label>
+              <select id="f-status" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+                <option value="กำลังศึกษา">กำลังศึกษา</option>
+                <option value="จบการศึกษา">จบการศึกษา</option>
+                <option value="ย้าย">ย้าย</option>
+                <option value="พ้นสภาพ">พ้นสภาพ</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="closeStudentModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg">ยกเลิก</button>
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึก</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+<script src="assets/js/api.config.js"></script>
+<script src="assets/js/menu.config.js"></script>
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/students-manage.js"></script>
+</body>
+</html>
