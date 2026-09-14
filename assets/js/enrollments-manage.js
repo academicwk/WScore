@@ -110,26 +110,85 @@ async function openEnrollmentModal(data) {
   document.getElementById("f-enrollmentId").value = isEdit ? data.enrollmentId : "";
   document.getElementById("modalTitle").textContent = isEdit ? "แก้ไขเลขที่ในห้อง" : "เพิ่มนักเรียนเข้าห้อง";
 
-  const studentSelect = document.getElementById("f-studentId");
-
   if (isEdit) {
-    studentSelect.innerHTML = `<option value="${data.studentId}">${data.studentId} - ${data.fullName}</option>`;
-    studentSelect.disabled = true;
+    document.getElementById("f-studentSingleWrap").classList.remove("hidden");
+    document.getElementById("f-studentMultiWrap").classList.add("hidden");
+    document.getElementById("f-studentNumberWrap").classList.remove("hidden");
+
+    document.getElementById("f-studentId").innerHTML = `<option value="${data.studentId}">${data.studentId} - ${data.fullName}</option>`;
     document.getElementById("f-studentNumber").value = data.studentNumber;
+    document.getElementById("f-studentNumber").required = true;
   } else {
-    studentSelect.disabled = false;
+    document.getElementById("f-studentSingleWrap").classList.add("hidden");
+    document.getElementById("f-studentMultiWrap").classList.remove("hidden");
+    document.getElementById("f-studentNumberWrap").classList.add("hidden");
+    document.getElementById("f-studentNumber").required = false;
+
+    document.getElementById("f-selectAll").checked = false;
+    document.getElementById("f-studentSearch").value = "";
+    document.getElementById("f-studentSearch").oninput = filterStudentCheckboxList;
+    document.getElementById("f-selectAll").onchange = toggleSelectAll;
+
     const yearId = document.getElementById("yearFilter").value;
     const result = await callApi("getAvailableStudents", { academicYearId: yearId });
     if (result.status === "success") {
-      studentSelect.innerHTML =
-        `<option value="">- เลือกนักเรียน -</option>` +
-        result.data.map((s) => `<option value="${s.studentId}">${s.studentId} - ${s.fullName}</option>`).join("");
+      renderStudentCheckboxList(result.data);
+    } else {
+      document.getElementById("studentCheckboxList").innerHTML =
+        `<div class="text-center text-red-500 text-sm py-4">${result.message}</div>`;
     }
   }
 
   document.getElementById("enrollmentModal").classList.remove("hidden");
 }
 
+function renderStudentCheckboxList(students) {
+  const container = document.getElementById("studentCheckboxList");
+
+  if (students.length === 0) {
+    container.innerHTML = `<div class="text-center text-gray-400 text-sm py-4">ไม่พบนักเรียนที่ยังไม่ถูกจัดห้อง</div>`;
+    return;
+  }
+
+  container.innerHTML = students
+    .map(
+      (s) => `
+    <label class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer student-checkbox-row" data-label="${s.studentId} ${s.fullName}">
+      <input type="checkbox" class="student-checkbox" value="${s.studentId}" onchange="updateSelectedCount()">
+      <span>${s.studentId} - ${s.fullName}</span>
+    </label>`
+    )
+    .join("");
+
+  updateSelectedCount();
+}
+
+function filterStudentCheckboxList() {
+  const keyword = document.getElementById("f-studentSearch").value.trim().toLowerCase();
+  document.querySelectorAll("#studentCheckboxList .student-checkbox-row").forEach((row) => {
+    const label = row.getAttribute("data-label").toLowerCase();
+    row.style.display = label.includes(keyword) ? "" : "none";
+  });
+}
+
+function toggleSelectAll() {
+  const checked = document.getElementById("f-selectAll").checked;
+  document.querySelectorAll("#studentCheckboxList .student-checkbox-row").forEach((row) => {
+    if (row.style.display !== "none") {
+      row.querySelector(".student-checkbox").checked = checked;
+    }
+  });
+  updateSelectedCount();
+}
+
+function updateSelectedCount() {
+  const count = document.querySelectorAll("#studentCheckboxList .student-checkbox:checked").length;
+  document.getElementById("selectedCount").textContent = `เลือกแล้ว ${count} คน`;
+}
+
+function getSelectedStudentIds() {
+  return Array.from(document.querySelectorAll("#studentCheckboxList .student-checkbox:checked")).map((el) => el.value);
+}
 function closeEnrollmentModal() {
   document.getElementById("enrollmentModal").classList.add("hidden");
 }
