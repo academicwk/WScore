@@ -200,20 +200,29 @@ async function handleSubmitEnrollment(e) {
   const classId = document.getElementById("classFilter").value;
   const yearId = document.getElementById("yearFilter").value;
 
-  const payload = {
-    enrollmentId: document.getElementById("f-enrollmentId").value,
-    studentId: document.getElementById("f-studentId").value,
-    classId: classId,
-    academicYearId: yearId,
-    studentNumber: document.getElementById("f-studentNumber").value,
-  };
-
   const submitBtn = document.querySelector("#enrollmentForm button[type='submit']");
   submitBtn.disabled = true;
   submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึก...';
 
   try {
-    const result = await callApi(isEdit ? "updateEnrollmentNumber" : "addEnrollment", payload);
+    let result;
+
+    if (isEdit) {
+      const payload = {
+        enrollmentId: document.getElementById("f-enrollmentId").value,
+        studentNumber: document.getElementById("f-studentNumber").value,
+      };
+      result = await callApi("updateEnrollmentNumber", payload);
+    } else {
+      const studentIds = getSelectedStudentIds();
+      if (studentIds.length === 0) {
+        Swal.fire({ icon: "warning", title: "กรุณาเลือกนักเรียนอย่างน้อย 1 คน", confirmButtonColor: "#268244" });
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = "บันทึก";
+        return;
+      }
+      result = await callApi("addEnrollmentsBulk", { studentIds, classId, academicYearId: yearId });
+    }
 
     if (result.status === "success") {
       closeEnrollmentModal();
