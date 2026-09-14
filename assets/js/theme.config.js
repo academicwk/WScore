@@ -3,7 +3,7 @@
  * แก้ไขค่าสี (Hex Code) ของระบบได้ที่นี่ที่เดียว มีผลกับทุกหน้าที่เรียกใช้ไฟล์นี้
  */
 window.WSCORE_THEME_COLORS = {
-  primary: '#40BD68',       // สีหลัก
+  primary: '#268244',       // สีหลัก
   primaryDark: '#329654',   // สีหลัก (เข้ม) - ใช้ตอน hover
   primaryLight: '#E8F8ED',  // สีหลัก (อ่อน)
   secondary: '#121363',     // สีรอง
