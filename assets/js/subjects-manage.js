@@ -158,15 +158,31 @@ async function handleSubmitSubject(e) {
     gradeLevel: document.getElementById("f-gradeLevel").value,
   };
 
-  const result = await callApi(isEdit ? "updateSubject" : "addSubject", payload);
+  setSubjectFormLoading(true);
 
-  if (result.status === "success") {
-    closeSubjectModal();
-    Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
-    loadSubjects();
-  } else {
-    Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+  try {
+    const result = await callApi(isEdit ? "updateSubject" : "addSubject", payload);
+
+    if (result.status === "success") {
+      closeSubjectModal();
+      Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+      loadSubjects();
+    } else {
+      Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+    }
+  } catch (err) {
+    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
+  } finally {
+    setSubjectFormLoading(false);
   }
+}
+
+function setSubjectFormLoading(isLoading) {
+  const submitBtn = document.querySelector("#subjectForm button[type='submit']");
+  submitBtn.disabled = isLoading;
+  submitBtn.innerHTML = isLoading
+    ? '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึก...'
+    : "บันทึก";
 }
 
 async function deleteSubject(subjectId) {
