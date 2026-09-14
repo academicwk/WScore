@@ -5,6 +5,8 @@
 let allYears = [];
 let allClasses = [];
 let currentEnrollments = [];
+let availableStudentsMap = {};
+let importedValidStudentIds = [];
 
 document.addEventListener("DOMContentLoaded", async function () {
   await loadYearsIntoFilter();
@@ -96,9 +98,6 @@ function renderEnrollmentTable(enrollments) {
     )
     .join("");
 }
-
-let availableStudentsMap = {};
-let importedValidStudentIds = [];
 
 async function openEnrollmentModal(data) {
   const classId = document.getElementById("classFilter").value;
@@ -215,53 +214,6 @@ function renderImportPreview(rawIds) {
   }
 }
 
-function renderStudentCheckboxList(students) {
-  const container = document.getElementById("studentCheckboxList");
-
-  if (students.length === 0) {
-    container.innerHTML = `<div class="text-center text-gray-400 text-sm py-4">ไม่พบนักเรียนที่ยังไม่ถูกจัดห้อง</div>`;
-    return;
-  }
-
-  container.innerHTML = students
-    .map(
-      (s) => `
-    <label class="flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer student-checkbox-row" data-label="${s.studentId} ${s.fullName}">
-      <input type="checkbox" class="student-checkbox" value="${s.studentId}" onchange="updateSelectedCount()">
-      <span>${s.studentId} - ${s.fullName}</span>
-    </label>`
-    )
-    .join("");
-
-  updateSelectedCount();
-}
-
-function filterStudentCheckboxList() {
-  const keyword = document.getElementById("f-studentSearch").value.trim().toLowerCase();
-  document.querySelectorAll("#studentCheckboxList .student-checkbox-row").forEach((row) => {
-    const label = row.getAttribute("data-label").toLowerCase();
-    row.style.display = label.includes(keyword) ? "" : "none";
-  });
-}
-
-function toggleSelectAll() {
-  const checked = document.getElementById("f-selectAll").checked;
-  document.querySelectorAll("#studentCheckboxList .student-checkbox-row").forEach((row) => {
-    if (row.style.display !== "none") {
-      row.querySelector(".student-checkbox").checked = checked;
-    }
-  });
-  updateSelectedCount();
-}
-
-function updateSelectedCount() {
-  const count = document.querySelectorAll("#studentCheckboxList .student-checkbox:checked").length;
-  document.getElementById("selectedCount").textContent = `เลือกแล้ว ${count} คน`;
-}
-
-function getSelectedStudentIds() {
-  return Array.from(document.querySelectorAll("#studentCheckboxList .student-checkbox:checked")).map((el) => el.value);
-}
 function closeEnrollmentModal() {
   document.getElementById("enrollmentModal").classList.add("hidden");
 }
@@ -273,14 +225,6 @@ async function handleSubmitEnrollment(e) {
   const classId = document.getElementById("classFilter").value;
   const yearId = document.getElementById("yearFilter").value;
 
-  const submitBtn = document.querySelector("#enrollmentForm button[type='submit']");
-  submitBtn.disabled = true;
-  submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึก...';
-
-  try {
-    let result;
-
-    if (isEdit) {
   const submitBtn = document.querySelector("#enrollmentForm button[type='submit']");
   submitBtn.disabled = true;
   submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึก...';
