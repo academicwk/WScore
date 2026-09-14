@@ -35,7 +35,7 @@ async function loadYearsIntoFilters() {
 }
 
 async function loadTeachers() {
-  const result = await callApi("getUsers");
+const result = await callApi("getHomeroomTeachers");
   if (result.status !== "success") return;
 
   allTeachers = result.data;
