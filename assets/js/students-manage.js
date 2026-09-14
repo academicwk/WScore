@@ -10,7 +10,18 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("addStudentBtn").addEventListener("click", () => openStudentModal("add"));
   document.getElementById("studentForm").addEventListener("submit", handleSubmitStudent);
   document.getElementById("searchInput").addEventListener("input", handleSearch);
+
+  // คำนำหน้า -> กำหนดเพศอัตโนมัติ
+  document.getElementById("f-prefixName").addEventListener("change", function () {
+    updateGenderFromPrefix();
+  });
 });
+
+function updateGenderFromPrefix() {
+  const prefix = document.getElementById("f-prefixName").value;
+  const genderSelect = document.getElementById("f-gender");
+  genderSelect.value = prefix === "เด็กชาย" || prefix === "นาย" ? "ชาย" : "หญิง";
+}
 
 async function loadStudents() {
   const tbody = document.getElementById("studentTableBody");
@@ -93,7 +104,6 @@ function openStudentModal(mode, data) {
     document.getElementById("f-citizenId").value = data.CitizenID || "";
     document.getElementById("f-prefixName").value = data.PrefixName;
     document.getElementById("f-fullName").value = data.FullName;
-    document.getElementById("f-gender").value = data.Gender;
     document.getElementById("f-birthDate").value = formatDateForInput(data.BirthDate);
     document.getElementById("f-religion").value = data.Religion || "";
     document.getElementById("f-fatherName").value = data.FatherName || "";
@@ -102,7 +112,11 @@ function openStudentModal(mode, data) {
     document.getElementById("f-previousSchoolProvince").value = data.PreviousSchoolProvince || "";
     document.getElementById("f-lastGradeLevel").value = data.LastGradeLevel || "";
     document.getElementById("f-status").value = data.Status;
+  } else {
+    document.getElementById("f-prefixName").value = "เด็กชาย";
   }
+
+  updateGenderFromPrefix();
 
   document.getElementById("studentModal").classList.remove("hidden");
 }
