@@ -4,16 +4,14 @@
 
 let allYears = [];
 let allClasses = [];
+let rawClassesData = [];
 let currentEnrollments = [];
-let availableStudentsMap = {};
-let importedValidStudentIds = [];
 
 document.addEventListener("DOMContentLoaded", async function () {
-  await loadYearsIntoFilter();
-  await loadClassesIntoFilter();
+  await loadPageData();
 
-  document.getElementById("yearFilter").addEventListener("change", async () => {
-    await loadClassesIntoFilter();
+  document.getElementById("yearFilter").addEventListener("change", () => {
+    renderClassOptionsForYear();
     renderEmptyTable("กรุณาเลือกห้องเรียน");
   });
   document.getElementById("classFilter").addEventListener("change", loadEnrollments);
@@ -21,24 +19,29 @@ document.addEventListener("DOMContentLoaded", async function () {
   document.getElementById("enrollmentForm").addEventListener("submit", handleSubmitEnrollment);
 });
 
-async function loadYearsIntoFilter() {
-  const result = await callApi("getAcademicYears");
-  if (result.status !== "success") return;
+async function loadPageData() {
+  const result = await callApi("getEnrollmentsPageData");
+  if (result.status !== "success") {
+    renderEmptyTable(result.message);
+    return;
+  }
 
-  allYears = result.data;
+  allYears = result.data.academicYears;
+  rawClassesData = result.data.classes;
+
   const options = allYears.map((y) => `<option value="${y.AcademicYearID}">${y.Year}</option>`).join("");
   document.getElementById("yearFilter").innerHTML = options;
 
   const current = allYears.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE");
   if (current) document.getElementById("yearFilter").value = current.AcademicYearID;
+
+  renderClassOptionsForYear();
 }
 
-async function loadClassesIntoFilter() {
+function renderClassOptionsForYear() {
   const yearId = document.getElementById("yearFilter").value;
-  const result = await callApi("getClasses");
-  if (result.status !== "success") return;
+  allClasses = rawClassesData.filter((c) => String(c.AcademicYearID) === String(yearId));
 
-  allClasses = result.data.filter((c) => String(c.AcademicYearID) === String(yearId));
   const options = allClasses
     .map((c) => `<option value="${c.ClassID}">${c.GradeLevel}/${c.RoomNumber}</option>`)
     .join("");
@@ -98,6 +101,9 @@ function renderEnrollmentTable(enrollments) {
     )
     .join("");
 }
+
+let availableStudentsMap = {};
+let importedValidStudentIds = [];
 
 async function openEnrollmentModal(data) {
   const classId = document.getElementById("classFilter").value;
