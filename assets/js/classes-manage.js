@@ -7,44 +7,47 @@ let allYears = [];
 let allTeachers = [];
 
 document.addEventListener("DOMContentLoaded", async function () {
-  await Promise.all([loadYearsIntoFilters(), loadTeachers()]);
-  await loadClasses();
+  await loadPageData();
 
   document.getElementById("addClassBtn").addEventListener("click", () => openClassModal("add"));
   document.getElementById("classForm").addEventListener("submit", handleSubmitClass);
   document.getElementById("yearFilter").addEventListener("change", renderFilteredClasses);
 });
 
-async function loadYearsIntoFilters() {
-  const result = await callApi("getAcademicYears");
-  if (result.status !== "success") return;
+async function loadPageData() {
+  const tbody = document.getElementById("classTableBody");
+  tbody.innerHTML = `<tr><td colspan="6" class="text-center text-gray-400 py-6">กำลังโหลดข้อมูล...</td></tr>`;
 
-  allYears = result.data;
-  const options = allYears
-    .map((y) => `<option value="${y.AcademicYearID}">${y.Year}</option>`)
-    .join("");
+  try {
+    const result = await callApi("getClassesPageData");
 
-  document.getElementById("yearFilter").innerHTML = options;
-  document.getElementById("f-academicYearId").innerHTML = options;
+    if (result.status !== "success") {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center text-red-500 py-6">${result.message}</td></tr>`;
+      return;
+    }
 
-  const current = allYears.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE");
-  if (current) {
-    document.getElementById("yearFilter").value = current.AcademicYearID;
-    document.getElementById("f-academicYearId").value = current.AcademicYearID;
+    allYears = result.data.academicYears;
+    allTeachers = result.data.homeroomTeachers;
+    allClasses = result.data.classes;
+
+    const yearOptions = allYears.map((y) => `<option value="${y.AcademicYearID}">${y.Year}</option>`).join("");
+    document.getElementById("yearFilter").innerHTML = yearOptions;
+    document.getElementById("f-academicYearId").innerHTML = yearOptions;
+
+    const current = allYears.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE");
+    if (current) {
+      document.getElementById("yearFilter").value = current.AcademicYearID;
+      document.getElementById("f-academicYearId").value = current.AcademicYearID;
+    }
+
+    const teacherOptions = allTeachers.map((u) => `<option value="${u.userId}">${u.fullName}</option>`).join("");
+    document.getElementById("f-homeroomTeacherUserId").innerHTML = `<option value="">- ยังไม่กำหนด -</option>` + teacherOptions;
+    document.getElementById("f-homeroomTeacherUserId2").innerHTML = `<option value="">- ไม่มี -</option>` + teacherOptions;
+
+    renderFilteredClasses();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-red-500 py-6">เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</td></tr>`;
   }
-}
-
-async function loadTeachers() {
-const result = await callApi("getHomeroomTeachers");
-  if (result.status !== "success") return;
-
-  allTeachers = result.data;
-  const options = allTeachers
-    .map((u) => `<option value="${u.userId}">${u.fullName}</option>`)
-    .join("");
-
-  document.getElementById("f-homeroomTeacherUserId").innerHTML = `<option value="">- ยังไม่กำหนด -</option>` + options;
-  document.getElementById("f-homeroomTeacherUserId2").innerHTML = `<option value="">- ไม่มี -</option>` + options;
 }
 
 async function loadClasses() {
