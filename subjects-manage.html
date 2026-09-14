@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>จัดการหลักสูตร/รายวิชา - W-Score</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/js/theme.config.js"></script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body class="font-sans bg-gray-50">
+
+  <div id="app-header"></div>
+  <div id="app-sidebar"></div>
+
+  <main class="pt-16 lg:pl-64 min-h-screen transition-all">
+    <div class="p-4 sm:p-6">
+
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h1 class="text-lg font-bold text-wsecondary">
+          <i class="fa-solid fa-book text-wprimary mr-2"></i>จัดการหลักสูตร/รายวิชา
+        </h1>
+        <div class="flex items-center gap-2">
+          <input id="searchInput" type="text" placeholder="ค้นหารหัส/ชื่อวิชา"
+                 class="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30 w-full sm:w-56">
+          <button id="addSubjectBtn" class="flex items-center gap-2 bg-wprimary hover:bg-wprimary-dark text-white text-sm font-medium px-4 py-2 rounded-lg transition whitespace-nowrap">
+            <i class="fa-solid fa-plus"></i>
+            <span class="hidden sm:inline">เพิ่มรายวิชา</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-xl shadow overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+              <tr>
+                <th class="px-4 py-3 text-left">รหัสวิชา</th>
+                <th class="px-4 py-3 text-left">ชื่อวิชา</th>
+                <th class="px-4 py-3 text-left">ประเภท</th>
+                <th class="px-4 py-3 text-left">การประเมิน</th>
+                <th class="px-4 py-3 text-center">นก.</th>
+                <th class="px-4 py-3 text-center">ชม.</th>
+                <th class="px-4 py-3 text-left">ระดับชั้น</th>
+                <th class="px-4 py-3 text-right">การจัดการ</th>
+              </tr>
+            </thead>
+            <tbody id="subjectTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Modal เพิ่ม/แก้ไขรายวิชา -->
+  <div id="subjectModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/40" onclick="closeSubjectModal()"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 id="modalTitle" class="font-semibold text-wsecondary">เพิ่มรายวิชาใหม่</h2>
+          <button onclick="closeSubjectModal()" class="text-gray-400 hover:text-gray-600">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+
+        <form id="subjectForm" class="p-5 space-y-4">
+          <input type="hidden" id="f-isEdit" value="0">
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">รหัสวิชา</label>
+            <input id="f-subjectId" type="text" required
+                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ชื่อวิชา</label>
+            <input id="f-subjectName" type="text" required
+                   class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">ประเภทวิชา</label>
+              <select id="f-subjectType" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+                <option value="พื้นฐาน">พื้นฐาน</option>
+                <option value="เพิ่มเติม">เพิ่มเติม</option>
+                <option value="กิจกรรมพัฒนาผู้เรียน">กิจกรรมพัฒนาผู้เรียน</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">รูปแบบการประเมิน</label>
+              <select id="f-evaluationType" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+                <option value="ระดับคะแนน (0-4)">ระดับคะแนน (0-4)</option>
+                <option value="ผ่าน-ไม่ผ่าน (ผ/มผ)">ผ่าน-ไม่ผ่าน (ผ/มผ)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">กลุ่มสาระการเรียนรู้</label>
+              <input id="f-subjectGroup" type="text"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">กลุ่มสาระย่อย</label>
+              <input id="f-subjectSubGroup" type="text"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">หน่วยกิต</label>
+              <input id="f-credit" type="number" step="0.5" min="0"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">ชั่วโมง</label>
+              <input id="f-hours" type="number" min="0"
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">ระดับชั้น</label>
+              <select id="f-gradeLevel" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+                <option value="อนุบาล 1">อนุบาล 1</option>
+                <option value="อนุบาล 2">อนุบาล 2</option>
+                <option value="อนุบาล 3">อนุบาล 3</option>
+                <option value="ป.1">ป.1</option>
+                <option value="ป.2">ป.2</option>
+                <option value="ป.3">ป.3</option>
+                <option value="ป.4">ป.4</option>
+                <option value="ป.5">ป.5</option>
+                <option value="ป.6">ป.6</option>
+                <option value="ม.1">ม.1</option>
+                <option value="ม.2">ม.2</option>
+                <option value="ม.3">ม.3</option>
+                <option value="ม.4">ม.4</option>
+                <option value="ม.5">ม.5</option>
+                <option value="ม.6">ม.6</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="closeSubjectModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg">ยกเลิก</button>
+            <button type="submit"
+                    class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึก</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+<script src="assets/js/api.config.js"></script>
+<script src="assets/js/menu.config.js"></script>
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/subjects-manage.js"></script>
+</body>
+</html>
