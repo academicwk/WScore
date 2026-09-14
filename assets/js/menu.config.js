@@ -40,6 +40,18 @@ const MENU_CONFIG = [
   },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    icon: "fa-calendar-days",
+    label: "ตั้งค่าปีการศึกษา",
+    href: "settings-academic-year.html",
+  },
+  {
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    icon: "fa-book",
+    label: "จัดการหลักสูตร/รายวิชา",
+    href: "subjects-manage.html",
+  },  
+  {
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-book",
     label: "จัดการหลักสูตร/รายวิชา",
     href: "subjects-manage.html",
