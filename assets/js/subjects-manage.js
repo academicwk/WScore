@@ -11,13 +11,51 @@ document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("subjectForm").addEventListener("submit", handleSubmitSubject);
   document.getElementById("searchInput").addEventListener("input", handleSearch);
 
-  // คำนวณชั่วโมงอัตโนมัติจากหน่วยกิต (1 นก. = 40 ชม.) แก้ไขเองได้ภายหลัง
-  document.getElementById("f-credit").addEventListener("input", function () {
-    if (document.getElementById("f-isEdit").value === "0") {
-      document.getElementById("f-hours").value = Math.round(Number(this.value || 0) * 40);
-    }
+  // ประเภทวิชา -> กำหนดรูปแบบการประเมินอัตโนมัติ
+  document.getElementById("f-subjectType").addEventListener("change", function () {
+    updateEvaluationType();
+  });
+
+  // กลุ่มสาระการเรียนรู้ -> กำหนดตัวเลือกกลุ่มสาระย่อยอัตโนมัติ
+  document.getElementById("f-subjectGroup").addEventListener("change", function () {
+    updateSubGroupOptions();
+  });
+
+  // หน่วยกิต -> คำนวณชั่วโมงอัตโนมัติ (1 นก. = 40 ชม.)
+  document.getElementById("f-credit").addEventListener("change", function () {
+    document.getElementById("f-hours").value = Number(this.value || 0) * 40;
   });
 });
+
+function updateEvaluationType() {
+  const subjectType = document.getElementById("f-subjectType").value;
+  const evaluationSelect = document.getElementById("f-evaluationType");
+  evaluationSelect.value =
+    subjectType === "กิจกรรมพัฒนาผู้เรียน" ? "ผ่าน-ไม่ผ่าน (ผ/มผ)" : "ระดับคะแนน (0-4)";
+}
+
+function updateSubGroupOptions(selectedValue) {
+  const subjectGroup = document.getElementById("f-subjectGroup").value;
+  const subGroupSelect = document.getElementById("f-subjectSubGroup");
+
+  let options = ["-"];
+  let disabled = true;
+
+  if (subjectGroup === "วิทยาศาสตร์และเทคโนโลยี") {
+    options = ["วิทยาศาสตร์", "เทคโนโลยี"];
+    disabled = false;
+  } else if (subjectGroup === "ภาษาต่างประเทศ") {
+    options = ["ภาษาอังกฤษ", "ภาษาจีน"];
+    disabled = false;
+  }
+
+  subGroupSelect.innerHTML = options.map((o) => `<option value="${o}">${o}</option>`).join("");
+  subGroupSelect.disabled = disabled;
+
+  if (selectedValue && options.includes(selectedValue)) {
+    subGroupSelect.value = selectedValue;
+  }
+}
 
 async function loadSubjects() {
   const tbody = document.getElementById("subjectTableBody");
@@ -86,17 +124,20 @@ function openSubjectModal(mode, data) {
     document.getElementById("f-subjectId").value = data.SubjectID;
     document.getElementById("f-subjectName").value = data.SubjectName;
     document.getElementById("f-subjectType").value = data.SubjectType;
-    document.getElementById("f-evaluationType").value = data.EvaluationType;
     document.getElementById("f-subjectGroup").value = data.SubjectGroup || "";
-    document.getElementById("f-subjectSubGroup").value = data.SubjectSubGroup || "";
     document.getElementById("f-credit").value = data.Credit;
     document.getElementById("f-hours").value = data.Hours;
     document.getElementById("f-gradeLevel").value = data.GradeLevel;
+    updateEvaluationType();
+    updateSubGroupOptions(data.SubjectSubGroup);
+  } else {
+    updateEvaluationType();
+    updateSubGroupOptions();
+    document.getElementById("f-hours").value = Number(document.getElementById("f-credit").value || 1) * 40;
   }
 
   document.getElementById("subjectModal").classList.remove("hidden");
 }
-
 function closeSubjectModal() {
   document.getElementById("subjectModal").classList.add("hidden");
 }
