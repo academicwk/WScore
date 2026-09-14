@@ -1,0 +1,17 @@
+/* W-Score : Login Page - Custom Styles */
+
+html, body {
+  font-family: 'Sarabun', sans-serif;
+}
+
+/* สถานะ disabled ของปุ่ม Login ระหว่างประมวลผล */
+#loginBtn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* กัน autofill ของ Chrome เปลี่ยนสีพื้นหลัง input */
+input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset;
+  -webkit-text-fill-color: #111827;
+}
