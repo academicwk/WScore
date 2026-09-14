@@ -62,7 +62,7 @@ function renderStudentTable(students) {
         <span class="text-xs font-medium px-2.5 py-1 rounded-full ${statusBadgeClass(s.Status)}">${s.Status}</span>
       </td>
       <td class="px-4 py-3 text-right whitespace-nowrap">
-        <button onclick='openStudentModal("edit", ${JSON.stringify(s)})' class="text-wprimary hover:underline text-xs font-medium mr-3">แก้ไข</button>
+        <button onclick='("edit", ${JSON.stringify(s)})' class="text-wprimary hover:underline text-xs font-medium mr-3">แก้ไข</button>
         <button onclick="deleteStudent('${s.StudentID}')" class="text-red-500 hover:underline text-xs font-medium">ลบ</button>
       </td>
     </tr>`
@@ -113,6 +113,7 @@ function openStudentModal(mode, data) {
     document.getElementById("f-previousSchoolProvince").value = data.PreviousSchoolProvince || "";
     document.getElementById("f-lastGradeLevel").value = data.LastGradeLevel || "";
     document.getElementById("f-status").value = data.Status;
+    document.getElementById("f-admissionDate").value = formatDateForInput(data.AdmissionDate);
   } else {
     document.getElementById("f-prefixName").value = "เด็กชาย";
   }
@@ -152,6 +153,8 @@ async function handleSubmitStudent(e) {
     previousSchoolProvince: document.getElementById("f-previousSchoolProvince").value.trim(),
     lastGradeLevel: document.getElementById("f-lastGradeLevel").value.trim(),
     status: document.getElementById("f-status").value,
+    admissionDate: document.getElementById("f-admissionDate").value,
+  };
   };
 
   setStudentFormLoading(true);
