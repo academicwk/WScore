@@ -97,6 +97,9 @@ function renderEnrollmentTable(enrollments) {
     .join("");
 }
 
+let availableStudentsMap = {};
+let importedValidStudentIds = [];
+
 async function openEnrollmentModal(data) {
   const classId = document.getElementById("classFilter").value;
   if (!classId) {
@@ -105,41 +108,111 @@ async function openEnrollmentModal(data) {
   }
 
   document.getElementById("enrollmentForm").reset();
+  document.getElementById("importPreview").classList.add("hidden");
+  document.getElementById("importInvalidNote").classList.add("hidden");
+  importedValidStudentIds = [];
+
   const isEdit = !!(data && data.enrollmentId);
   document.getElementById("f-isEdit").value = isEdit ? "1" : "0";
   document.getElementById("f-enrollmentId").value = isEdit ? data.enrollmentId : "";
-  document.getElementById("modalTitle").textContent = isEdit ? "แก้ไขเลขที่ในห้อง" : "เพิ่มนักเรียนเข้าห้อง";
+  document.getElementById("modalTitle").textContent = isEdit ? "แก้ไขเลขที่ในห้อง" : "เพิ่มนักเรียนเข้าห้อง (นำเข้าจากไฟล์)";
+
+  document.getElementById("f-editWrap").classList.toggle("hidden", !isEdit);
+  document.getElementById("f-importWrap").classList.toggle("hidden", isEdit);
 
   if (isEdit) {
-    document.getElementById("f-studentSingleWrap").classList.remove("hidden");
-    document.getElementById("f-studentMultiWrap").classList.add("hidden");
-    document.getElementById("f-studentNumberWrap").classList.remove("hidden");
-
     document.getElementById("f-studentId").innerHTML = `<option value="${data.studentId}">${data.studentId} - ${data.fullName}</option>`;
     document.getElementById("f-studentNumber").value = data.studentNumber;
     document.getElementById("f-studentNumber").required = true;
   } else {
-    document.getElementById("f-studentSingleWrap").classList.add("hidden");
-    document.getElementById("f-studentMultiWrap").classList.remove("hidden");
-    document.getElementById("f-studentNumberWrap").classList.add("hidden");
     document.getElementById("f-studentNumber").required = false;
-
-    document.getElementById("f-selectAll").checked = false;
-    document.getElementById("f-studentSearch").value = "";
-    document.getElementById("f-studentSearch").oninput = filterStudentCheckboxList;
-    document.getElementById("f-selectAll").onchange = toggleSelectAll;
 
     const yearId = document.getElementById("yearFilter").value;
     const result = await callApi("getAvailableStudents", { academicYearId: yearId });
+    availableStudentsMap = {};
     if (result.status === "success") {
-      renderStudentCheckboxList(result.data);
-    } else {
-      document.getElementById("studentCheckboxList").innerHTML =
-        `<div class="text-center text-red-500 text-sm py-4">${result.message}</div>`;
+      result.data.forEach((s) => {
+        availableStudentsMap[String(s.studentId)] = s.fullName;
+      });
     }
+
+    document.getElementById("f-importFile").value = "";
+    document.getElementById("downloadTemplateBtn").onclick = downloadImportTemplate;
+    document.getElementById("f-importFile").onchange = handleImportFileChange;
   }
 
   document.getElementById("enrollmentModal").classList.remove("hidden");
+}
+
+function downloadImportTemplate() {
+  const wsData = [["รหัสประจำตัวนักเรียน"], ["S0001"], ["S0002"]];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "รายชื่อนักเรียน");
+  XLSX.writeFile(wb, "แบบฟอร์มนำเข้านักเรียนเข้าห้อง.xlsx");
+}
+
+function handleImportFileChange(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function (evt) {
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+      const header = (rows[0] || []).map((h) => String(h).trim());
+      let colIndex = header.findIndex((h) => h.indexOf("รหัสประจำตัว") !== -1);
+      if (colIndex === -1) colIndex = 0;
+
+      const rawIds = rows
+        .slice(1)
+        .map((r) => (r[colIndex] !== undefined ? String(r[colIndex]).trim() : ""))
+        .filter((id) => id !== "");
+
+      renderImportPreview(rawIds);
+    } catch (err) {
+      Swal.fire({ icon: "error", title: "ไม่สามารถอ่านไฟล์นี้ได้", text: "กรุณาตรวจสอบรูปแบบไฟล์", confirmButtonColor: "#268244" });
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function renderImportPreview(rawIds) {
+  const validIds = [];
+  const invalidIds = [];
+
+  rawIds.forEach((id) => {
+    if (availableStudentsMap.hasOwnProperty(id)) {
+      validIds.push(id);
+    } else {
+      invalidIds.push(id);
+    }
+  });
+
+  validIds.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  importedValidStudentIds = validIds;
+
+  const listEl = document.getElementById("importPreviewList");
+  document.getElementById("importPreview").classList.remove("hidden");
+  document.getElementById("importValidCount").textContent = validIds.length;
+
+  if (validIds.length === 0) {
+    listEl.innerHTML = `<div class="text-center text-gray-400 text-sm py-4">ไม่พบรหัสนักเรียนที่นำเข้าได้</div>`;
+  } else {
+    listEl.innerHTML = validIds.map((id) => `<div class="px-3 py-2">${id} - ${availableStudentsMap[id]}</div>`).join("");
+  }
+
+  const invalidNote = document.getElementById("importInvalidNote");
+  if (invalidIds.length > 0) {
+    invalidNote.textContent = `พบ ${invalidIds.length} รหัสที่ไม่ถูกต้อง หรือถูกจัดเข้าห้องเรียนไปแล้ว: ${invalidIds.join(", ")}`;
+    invalidNote.classList.remove("hidden");
+  } else {
+    invalidNote.classList.add("hidden");
+  }
 }
 
 function renderStudentCheckboxList(students) {
