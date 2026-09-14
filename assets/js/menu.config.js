@@ -52,6 +52,12 @@ const MENU_CONFIG = [
   },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    icon: "fa-people-group",
+    label: "จัดนักเรียนเข้าห้องเรียน",
+    href: "enrollments-manage.html",
+  },  
+  {
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-book",
     label: "จัดการหลักสูตร/รายวิชา",
     href: "subjects-manage.html",
