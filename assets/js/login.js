@@ -4,7 +4,7 @@
  */
 
 // TODO: แก้ไข URL นี้เป็น Web App URL จริงหลัง Deploy Google Apps Script แล้ว
-const GAS_API_URL = "https://script.google.com/macros/s/XXXXXXXXXXXXXXXXXXXXXXXXXXXX/exec";
+const GAS_API_URL = "https://script.google.com/macros/s/AKfycbz-8xNX3j0o__QyrJVg31eGFR8Mkgj3bUQotmeRCOsDJLUMxNOIu75tPXkuKTH8yubv/exec";
 
 document.addEventListener("DOMContentLoaded", function () {
   document.getElementById("yearNow").textContent = new Date().getFullYear() + 543;
