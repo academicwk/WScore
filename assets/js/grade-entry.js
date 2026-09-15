@@ -134,7 +134,6 @@ function scoreKey(studentId, componentId, subComponentId) {
 }
 
 // รายการ "ช่อง" ทั้งหมดที่ต้องกรอกคะแนน เรียงตามลำดับ (ใช้ทั้งตอน render และตอน paste)
-// รายการ "ช่อง" ทั้งหมดที่ต้องกรอกคะแนน เรียงตามลำดับ (ใช้ทั้งตอน render และตอน paste)
 // ไม่ระบุ componentId = เอาทุกช่องทุกหน่วย (ใช้ตอนบันทึก/ตอนคำนวณคะแนนรวม)
 // ระบุ componentId = เอาเฉพาะช่องของหน่วย/แท็บที่กำลังเปิดอยู่ (ใช้ตอนแสดงตาราง)
 function getInputColumns(componentId) {
@@ -248,12 +247,12 @@ function renderEntryTable() {
     return;
   }
 
-    const cols = getInputColumns(activeComponentId);
+  const cols = getInputColumns(activeComponentId);
 
   const activeComp = currentComponents.find((c) => String(c.componentId) === String(activeComponentId));
   const showUnitSummaryCols = !!activeComp && activeComp.componentType !== "ปลายภาค";
 
-   const headHtml =
+  const headHtml =
     cols
       .map(
         (c) =>
@@ -271,7 +270,7 @@ function renderEntryTable() {
         .map((c, ci) => {
           const val = currentScores[scoreKey(st.studentId, c.componentId, c.subComponentId)];
           return `
-        <td class="px-1 py-1 text-center border-l-2 border-gray-400 ${cellBgClass(val)}">
+        <td class="px-1 py-1 text-center border-l-2 border-b-2 border-gray-400 ${cellBgClass(val)}">
           <input type="number" min="0" max="${c.maxScore}" step="any"
                  data-si="${si}" data-ci="${ci}"
                  data-student-id="${st.studentId}" data-component-id="${c.componentId}" data-sub-component-id="${c.subComponentId}"
@@ -284,21 +283,21 @@ function renderEntryTable() {
 
       const unitSummaryHtml = showUnitSummaryCols
         ? `
-      <td class="px-3 py-2 text-center border-l-2 border-gray-400 font-medium text-gray-600" data-raw-for="${st.studentId}">
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-raw-for="${st.studentId}">
         ${formatUnitRaw(activeComp, st.studentId)}
       </td>
-      <td class="px-3 py-2 text-center border-l-2 border-gray-400 font-semibold text-wprimary" data-unit-for="${st.studentId}">
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary" data-unit-for="${st.studentId}">
         ${computeUnitScore(activeComp, st.studentId).toFixed(2)}
       </td>`
         : "";
 
       return `
     <tr class="${si % 2 === 0 ? "bg-sky-200" : "bg-slate-300"}" data-row-student="${st.studentId}">
-      <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap">${st.studentNumber}</td>
-      <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-gray-400">${st.fullName}</td>
+      <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap border-b-2 border-gray-400">${st.studentNumber}</td>
+      <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-b-2 border-gray-400">${st.fullName}</td>
       ${cellsHtml}
       ${unitSummaryHtml}
-      <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l-2 border-gray-400" data-total-for="${st.studentId}">
+      <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l-2 border-b-2 border-gray-400" data-total-for="${st.studentId}">
         ${computeRowTotal(st.studentId).toFixed(2)}
       </td>
     </tr>`;
@@ -311,13 +310,13 @@ function renderEntryTable() {
         ${renderTabs()}
       </div>
       <div class="overflow-x-auto">
-        <table id="scoreTable" class="w-full text-sm">
+        <table id="scoreTable" class="w-full text-sm border-collapse">
           <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
-              <th class="px-3 py-2 text-center w-16">เลขที่</th>
-              <th class="px-3 py-2 text-left border-l-2 border-gray-400">ชื่อ-สกุล</th>
+              <th class="px-3 py-2 text-center w-16 border-b-2 border-gray-400">เลขที่</th>
+              <th class="px-3 py-2 text-left border-l-2 border-b-2 border-gray-400">ชื่อ-สกุล</th>
               ${headHtml}
-              <th class="px-3 py-2 text-center border-l-2 border-gray-400">คะแนน (ฐาน 100)</th>
+              <th class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">คะแนน (ฐาน 100)</th>
             </tr>
           </thead>
           <tbody>${bodyHtml}</tbody>
