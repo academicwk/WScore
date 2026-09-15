@@ -345,8 +345,6 @@ function renderSetup() {
     </div>`;
       }
 
-      const subSum = comp.subComponents.reduce((sum, sc) => sum + Number(sc.maxScore || 0), 0);
-
       const subRowsHtml =
         comp.subComponents.length === 0
           ? `<div class="text-gray-400 text-xs py-2">ยังไม่มีช่องเก็บคะแนน</div>`
@@ -356,8 +354,8 @@ function renderSetup() {
       <div class="flex items-center justify-between border-b border-gray-100 py-2 text-sm">
         <span class="text-gray-700">${sc.subComponentName}</span>
         <div class="flex items-center gap-3">
-          <span class="text-gray-500">${sc.maxScore} คะแนน</span>
-          <button onclick="removeSubComponent('${sc.subComponentId}')" class="text-red-500 hover:underline text-xs">ลบ</button>
+        <span class="text-sm text-gray-500">${comp.subComponents.length} ช่อง (คิดคะแนนหน่วยจากค่าเฉลี่ย เต็ม ${comp.maxScore} คะแนน)</span>
+        <button onclick="removeSubComponent('${sc.subComponentId}')" class="text-red-500 hover:underline text-xs">ลบ</button>
         </div>
       </div>`
               )
