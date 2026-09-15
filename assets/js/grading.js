@@ -391,7 +391,7 @@ async function handleSubmitSubComponent(e) {
 
   const componentId = document.getElementById("f-componentId").value;
   const subComponentName = document.getElementById("f-subComponentName").value.trim();
-  const maxScore = document.getElementById("f-subComponentMaxScore").value;
+  const maxScore = 10;
 
   const submitBtn = document.querySelector("#subComponentForm button[type='submit']");
   submitBtn.disabled = true;
