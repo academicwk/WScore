@@ -62,8 +62,8 @@ async function loadSubjects() {
   tbody.innerHTML = `<tr><td colspan="8" class="text-center text-gray-400 py-6">กำลังโหลดข้อมูล...</td></tr>`;
 
   try {
-    const result = await callApi("getSubjects");
-
+    const result = await callApiCached("getSubjects");
+    
     if (result.status !== "success") {
       tbody.innerHTML = `<tr><td colspan="8" class="text-center text-red-500 py-6">${result.message}</td></tr>`;
       return;
@@ -165,6 +165,7 @@ async function handleSubmitSubject(e) {
 
     if (result.status === "success") {
       closeSubjectModal();
+      clearApiCache("getSubjects");
       Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
       loadSubjects();
     } else {
@@ -201,6 +202,7 @@ async function deleteSubject(subjectId) {
   const result = await callApi("deleteSubject", { subjectId });
 
   if (result.status === "success") {
+    clearApiCache("getSubjects");
     Swal.fire({ icon: "success", title: "ลบสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     loadSubjects();
   } else {
