@@ -161,6 +161,10 @@ function openAssignModal(classId, yearId, className, subjectId, subjectName) {
   document.getElementById("assignModal").classList.remove("hidden");
 }
 
+function closeAssignModal() {
+  document.getElementById("assignModal").classList.add("hidden");
+}
+
 async function handleSubmitAssign(e) {
   e.preventDefault();
 
