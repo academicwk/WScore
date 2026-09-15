@@ -205,9 +205,10 @@ function formatUnitRaw(comp, studentId) {
 
 // สีพื้นหลังของช่องกรอกคะแนน: ยังไม่กรอก = เหลืองอ่อน, กรอกแล้วต่ำกว่า 6 = แดงอ่อน, กรอกแล้ว 6 ขึ้นไป = เขียวอ่อน
 function cellBgClass(val) {
-  if (val === undefined || val === null || val === "" || isNaN(Number(val))) return "bg-yellow-50";
-  return Number(val) < 6 ? "bg-red-50" : "bg-green-50";
+  if (val === undefined || val === null || val === "" || isNaN(Number(val))) return "bg-yellow-200";
+  return Number(val) < 6 ? "bg-red-200" : "bg-green-200";
 }
+
 function renderTabs() {
   return currentComponents
     .map((comp) => {
@@ -292,7 +293,7 @@ function renderEntryTable() {
         : "";
 
       return `
-    <tr class="${si % 2 === 0 ? "bg-sky-50" : "bg-slate-100"}" data-row-student="${st.studentId}">
+    <tr class="${si % 2 === 0 ? "bg-sky-200" : "bg-slate-300"}" data-row-student="${st.studentId}">
       <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap">${st.studentNumber}</td>
       <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-gray-400">${st.fullName}</td>
       ${cellsHtml}
@@ -350,7 +351,7 @@ function onScoreInput(input) {
   // อัปเดตสีพื้นหลังของช่องนี้ตามคะแนนที่กรอก
   const cell = input.closest("td");
   if (cell) {
-    cell.classList.remove("bg-yellow-50", "bg-green-50", "bg-red-50");
+    cell.classList.remove("bg-yellow-200", "bg-green-200", "bg-red-200");
     cell.classList.add(cellBgClass(val));
   }
 
