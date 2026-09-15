@@ -20,7 +20,7 @@ document.addEventListener("DOMContentLoaded", async function () {
 });
 
 async function loadPageData() {
-  const result = await callApi("getEnrollmentsPageData");
+  const result = await callApiCached("getEnrollmentsPageData");
   if (result.status !== "success") {
     renderEmptyTable(result.message);
     return;
@@ -256,6 +256,7 @@ async function handleSubmitEnrollment(e) {
 
     if (result.status === "success") {
       closeEnrollmentModal();
+      clearApiCache("getClassesPageData");
       Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
       loadEnrollments();
     } else {
@@ -285,6 +286,7 @@ async function deleteEnrollment(enrollmentId) {
   const result = await callApi("deleteEnrollment", { enrollmentId });
 
   if (result.status === "success") {
+    clearApiCache("getClassesPageData");
     Swal.fire({ icon: "success", title: "นำออกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     loadEnrollments();
   } else {
