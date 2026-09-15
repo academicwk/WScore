@@ -7,85 +7,23 @@
  */
 
 document.addEventListener("DOMContentLoaded", function () {
+  const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
   const currentRole =
     sessionStorage.getItem("wscore_current_role") || "SUBJECT_TEACHER";
 
-  fetchDashboardData(currentRole).then((data) => {
+  if (!userData) return;
+
+  fetchDashboardData(currentRole, userData.userId).then((data) => {
     renderDashboard(currentRole, data);
   });
 });
 
-// TODO: แทนที่ด้วยการเรียก GAS_API_URL จริง action: "getDashboardData"
-function fetchDashboardData(role) {
-  const MOCK_DATA = {
-    SUBJECT_TEACHER: {
-      cards: [
-        { icon: "fa-book-open", label: "รายวิชาที่สอน", value: "4 วิชา" },
-        { icon: "fa-chalkboard", label: "ห้องที่สอน", value: "6 ห้อง" },
-        { icon: "fa-user-graduate", label: "นักเรียนทั้งหมด", value: "182 คน" },
-      ],
-      progress: [
-        { label: "ม.1/1 - ภาษาไทย", percent: 100 },
-        { label: "ม.1/2 - ภาษาไทย", percent: 75 },
-        { label: "ม.2/1 - ภาษาไทยเพิ่มเติม", percent: 40 },
-        { label: "ม.2/2 - ภาษาไทยเพิ่มเติม", percent: 0 },
-      ],
-      quickActions: [
-        { icon: "fa-pen-to-square", label: "บันทึกคะแนนรายวิชา", href: "grading.html" },
-      ],
-    },
-    HOMEROOM_TEACHER: {
-      cards: [
-        { icon: "fa-user-graduate", label: "นักเรียนในห้อง", value: "32 คน" },
-        { icon: "fa-triangle-exclamation", label: "ข้อมูลไม่ครบ", value: "3 คน" },
-        { icon: "fa-chart-line", label: "เกรดเฉลี่ยห้อง", value: "3.24" },
-      ],
-      progress: [
-        { label: "บันทึกเวลาเรียน", percent: 90 },
-        { label: "ประเมินคุณลักษณะอันพึงประสงค์", percent: 60 },
-        { label: "ประเมินการอ่าน คิดวิเคราะห์ และเขียน", percent: 60 },
-        { label: "ประเมินสมรรถนะสำคัญของผู้เรียน", percent: 20 },
-      ],
-      quickActions: [
-        { icon: "fa-user-check", label: "บันทึกเวลาเรียน/กิจกรรมโฮมรูม", href: "homeroom-activity.html" },
-        { icon: "fa-star", label: "ประเมินคุณลักษณะ/อ่านคิดวิเคราะห์", href: "homeroom-evaluation.html" },
-      ],
-    },
-    REGISTRAR: {
-      cards: [
-        { icon: "fa-user-graduate", label: "นักเรียนทั้งหมด", value: "1,240 คน" },
-        { icon: "fa-book", label: "รายวิชาทั้งหมด", value: "86 วิชา" },
-        { icon: "fa-chalkboard-user", label: "ครูผู้สอนทั้งหมด", value: "54 คน" },
-        { icon: "fa-clipboard-check", label: "รออนุมัติผลการเรียน", value: "12 รายการ" },
-      ],
-      progress: [
-        { label: "ครูกรอกคะแนนครบแล้ว", percent: 68 },
-        { label: "ครูประจำชั้นประเมินครบแล้ว", percent: 54 },
-      ],
-      quickActions: [
-        { icon: "fa-book", label: "จัดการหลักสูตร/รายวิชา", href: "subjects-manage.html" },
-        { icon: "fa-clipboard-check", label: "ตรวจสอบ/อนุมัติผลการเรียน", href: "grades-approve.html" },
-        { icon: "fa-file-lines", label: "พิมพ์เอกสาร (ปพ.1 / ปพ.3)", href: "documents.html" },
-      ],
-    },
-    DIRECTOR: {
-      cards: [
-        { icon: "fa-user-graduate", label: "นักเรียนทั้งหมด", value: "1,240 คน" },
-        { icon: "fa-chart-line", label: "ผลสัมฤทธิ์เฉลี่ยรวม", value: "3.15" },
-        { icon: "fa-circle-check", label: "อัตราจบการศึกษา", value: "98.4%" },
-      ],
-      progress: [
-        { label: "ภาพรวมการกรอกคะแนนทั้งโรงเรียน", percent: 68 },
-      ],
-      quickActions: [
-        { icon: "fa-chart-pie", label: "รายงานสรุปผู้บริหาร", href: "reports.html" },
-      ],
-    },
-  };
-
-  MOCK_DATA.ASSISTANT_REGISTRAR = MOCK_DATA.REGISTRAR;
-
-  return Promise.resolve(MOCK_DATA[role] || MOCK_DATA.SUBJECT_TEACHER);
+async function fetchDashboardData(role, userId) {
+  const result = await callApi("getDashboardData", { role, userId });
+  if (result.status !== "success") {
+    return { cards: [], progress: [], quickActions: [] };
+  }
+  return result.data;
 }
 
 function renderDashboard(role, data) {
@@ -106,20 +44,18 @@ function renderDashboard(role, data) {
     )
     .join("");
 
-  const progressHtml = data.progress
-    .map(
-      (p) => `
-    <div>
-      <div class="flex justify-between text-sm mb-1">
-        <span class="text-gray-600">${p.label}</span>
-        <span class="font-medium text-wsecondary">${p.percent}%</span>
+    const progressSectionHtml =
+    data.progress.length === 0
+      ? ""
+      : `
+    <div class="bg-white rounded-xl shadow p-5 mb-6">
+      <h2 class="text-sm font-semibold text-wsecondary mb-4">
+        <i class="fa-solid fa-chart-simple mr-1.5 text-wprimary"></i>ความคืบหน้า
+      </h2>
+      <div class="space-y-4">
+        ${progressHtml}
       </div>
-      <div class="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
-        <div class="h-full bg-wprimary rounded-full" style="width:${p.percent}%"></div>
-      </div>
-    </div>`
-    )
-    .join("");
+    </div>`;
 
   const actionsHtml = data.quickActions
     .map(
@@ -140,14 +76,7 @@ function renderDashboard(role, data) {
     </div>
 
     <!-- ส่วนที่ 2 : Progress & Charts -->
-    <div class="bg-white rounded-xl shadow p-5 mb-6">
-      <h2 class="text-sm font-semibold text-wsecondary mb-4">
-        <i class="fa-solid fa-chart-simple mr-1.5 text-wprimary"></i>ความคืบหน้า
-      </h2>
-      <div class="space-y-4">
-        ${progressHtml}
-      </div>
-    </div>
+    ${progressSectionHtml}
 
     <!-- ส่วนที่ 3 : Quick Actions -->
     <div>
