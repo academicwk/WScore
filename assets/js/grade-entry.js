@@ -192,6 +192,22 @@ function computeRowTotal(studentId) {
   return max > 0 ? (raw / max) * 100 : 0;
 }
 
+// คะแนนดิบรวมของหน่วย (ผลรวมคะแนนดิบจากทุกช่องในหน่วยนั้น) แสดงเป็น "ได้/เต็ม"
+function formatUnitRaw(comp, studentId) {
+  let raw = 0;
+  let max = 0;
+  comp.subComponents.forEach((sc) => {
+    raw += Number(currentScores[scoreKey(studentId, comp.componentId, sc.subComponentId)]) || 0;
+    max += Number(sc.maxScore) || 0;
+  });
+  return `${raw}/${max}`;
+}
+
+// สีพื้นหลังของช่องกรอกคะแนน: ยังไม่กรอก = เหลืองอ่อน, กรอกแล้วต่ำกว่า 6 = แดงอ่อน, กรอกแล้ว 6 ขึ้นไป = เขียวอ่อน
+function cellBgClass(val) {
+  if (val === undefined || val === null || val === "" || isNaN(Number(val))) return "bg-yellow-50";
+  return Number(val) < 6 ? "bg-red-50" : "bg-green-50";
+}
 function renderTabs() {
   return currentComponents
     .map((comp) => {
@@ -231,14 +247,22 @@ function renderEntryTable() {
     return;
   }
 
-  const cols = getInputColumns(activeComponentId);
+    const cols = getInputColumns(activeComponentId);
 
-  const headHtml = cols
-    .map(
-      (c) =>
-        `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l border-gray-200">${c.label}<br><span class="text-gray-400 font-normal">(เต็ม ${c.maxScore})</span></th>`
-    )
-    .join("");
+  const activeComp = currentComponents.find((c) => String(c.componentId) === String(activeComponentId));
+  const showUnitSummaryCols = !!activeComp && activeComp.componentType !== "ปลายภาค";
+
+  const headHtml =
+    cols
+      .map(
+        (c) =>
+          `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-gray-400">${c.label}<br><span class="text-gray-400 font-normal">(เต็ม ${c.maxScore})</span></th>`
+      )
+      .join("") +
+    (showUnitSummaryCols
+      ? `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-gray-400">คะแนนดิบรวม</th>
+         <th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-gray-400">คะแนนหน่วย<br><span class="text-gray-400 font-normal">(เต็ม ${activeComp.maxScore})</span></th>`
+      : "");
 
   const bodyHtml = currentStudents
     .map((st, si) => {
@@ -246,23 +270,34 @@ function renderEntryTable() {
         .map((c, ci) => {
           const val = currentScores[scoreKey(st.studentId, c.componentId, c.subComponentId)];
           return `
-        <td class="px-1 py-1 border-l border-gray-200">
+        <td class="px-1 py-1 text-center border-l-2 border-gray-400 ${cellBgClass(val)}">
           <input type="number" min="0" max="${c.maxScore}" step="any"
                  data-si="${si}" data-ci="${ci}"
                  data-student-id="${st.studentId}" data-component-id="${c.componentId}" data-sub-component-id="${c.subComponentId}"
                  value="${val === undefined ? "" : val}"
                  oninput="onScoreInput(this)"
-                 class="score-input w-16 text-center border border-gray-200 rounded-lg px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+                 class="score-input w-16 text-center border border-gray-300 rounded-lg px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
         </td>`;
         })
         .join("");
 
+      const unitSummaryHtml = showUnitSummaryCols
+        ? `
+      <td class="px-3 py-2 text-center border-l-2 border-gray-400 font-medium text-gray-600" data-raw-for="${st.studentId}">
+        ${formatUnitRaw(activeComp, st.studentId)}
+      </td>
+      <td class="px-3 py-2 text-center border-l-2 border-gray-400 font-semibold text-wprimary" data-unit-for="${st.studentId}">
+        ${computeUnitScore(activeComp, st.studentId).toFixed(2)}
+      </td>`
+        : "";
+
       return `
-    <tr class="${si % 2 === 0 ? "bg-white" : "bg-gray-200"}" data-row-student="${st.studentId}">
-    <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap">${st.studentNumber}</td>
-      <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l border-gray-200">${st.fullName}</td>
+    <tr class="${si % 2 === 0 ? "bg-sky-50" : "bg-slate-100"}" data-row-student="${st.studentId}">
+      <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap">${st.studentNumber}</td>
+      <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-gray-400">${st.fullName}</td>
       ${cellsHtml}
-      <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l border-gray-200" data-total-for="${st.studentId}">
+      ${unitSummaryHtml}
+      <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l-2 border-gray-400" data-total-for="${st.studentId}">
         ${computeRowTotal(st.studentId).toFixed(2)}
       </td>
     </tr>`;
@@ -279,9 +314,9 @@ function renderEntryTable() {
           <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
               <th class="px-3 py-2 text-center w-16">เลขที่</th>
-              <th class="px-3 py-2 text-left border-l border-gray-200">ชื่อ-สกุล</th>
+              <th class="px-3 py-2 text-left border-l-2 border-gray-400">ชื่อ-สกุล</th>
               ${headHtml}
-              <th class="px-3 py-2 text-center border-l border-gray-200">คะแนน (ฐาน 100)</th>
+              <th class="px-3 py-2 text-center border-l-2 border-gray-400">คะแนน (ฐาน 100)</th>
             </tr>
           </thead>
           <tbody>${bodyHtml}</tbody>
@@ -310,6 +345,23 @@ function onScoreInput(input) {
     delete currentScores[key];
   } else {
     currentScores[key] = val;
+  }
+
+  // อัปเดตสีพื้นหลังของช่องนี้ตามคะแนนที่กรอก
+  const cell = input.closest("td");
+  if (cell) {
+    cell.classList.remove("bg-yellow-50", "bg-green-50", "bg-red-50");
+    cell.classList.add(cellBgClass(val));
+  }
+
+  // อัปเดตคะแนนดิบรวม/คะแนนหน่วยของแถวนี้ (เฉพาะตอนเปิดแท็บหน่วยอยู่)
+  const activeComp = currentComponents.find((c) => String(c.componentId) === String(activeComponentId));
+  if (activeComp && activeComp.componentType !== "ปลายภาค") {
+    const rawCell = document.querySelector(`[data-raw-for="${studentId}"]`);
+    if (rawCell) rawCell.textContent = formatUnitRaw(activeComp, studentId);
+
+    const unitCell = document.querySelector(`[data-unit-for="${studentId}"]`);
+    if (unitCell) unitCell.textContent = computeUnitScore(activeComp, studentId).toFixed(2);
   }
 
   const totalCell = document.querySelector(`[data-total-for="${studentId}"]`);
