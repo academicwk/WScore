@@ -11,6 +11,7 @@ let myAssignments = [];
 let currentComponents = []; // หน่วย + ปลายภาค (จาก getGradeSetup)
 let currentStudents = [];
 let currentScores = {}; // key: studentId|componentId|subComponentId -> score
+let activeComponentId = null; // หน่วย/ปลายภาคที่กำลังแสดงอยู่ (แบบแท็บ)
 
 document.addEventListener("DOMContentLoaded", async function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
@@ -123,6 +124,8 @@ async function loadEntryIfReady() {
     currentScores[key] = Number(sc.Score);
   });
 
+  activeComponentId = currentComponents.length > 0 ? currentComponents[0].componentId : null;
+
   renderEntryTable();
 }
 
@@ -131,9 +134,14 @@ function scoreKey(studentId, componentId, subComponentId) {
 }
 
 // รายการ "ช่อง" ทั้งหมดที่ต้องกรอกคะแนน เรียงตามลำดับ (ใช้ทั้งตอน render และตอน paste)
-function getInputColumns() {
+// รายการ "ช่อง" ทั้งหมดที่ต้องกรอกคะแนน เรียงตามลำดับ (ใช้ทั้งตอน render และตอน paste)
+// ไม่ระบุ componentId = เอาทุกช่องทุกหน่วย (ใช้ตอนบันทึก/ตอนคำนวณคะแนนรวม)
+// ระบุ componentId = เอาเฉพาะช่องของหน่วย/แท็บที่กำลังเปิดอยู่ (ใช้ตอนแสดงตาราง)
+function getInputColumns(componentId) {
   const cols = [];
   currentComponents.forEach((comp) => {
+    if (componentId && comp.componentId !== componentId) return;
+
     if (comp.componentType === "ปลายภาค") {
       cols.push({ componentId: comp.componentId, subComponentId: "", maxScore: comp.maxScore, label: comp.componentName, isFinal: true });
     } else {
@@ -142,7 +150,7 @@ function getInputColumns() {
           componentId: comp.componentId,
           subComponentId: sc.subComponentId,
           maxScore: sc.maxScore,
-          label: `${comp.componentName} - ${sc.subComponentName}`,
+          label: sc.subComponentName,
           unitComponentId: comp.componentId,
         });
       });
@@ -184,6 +192,26 @@ function computeRowTotal(studentId) {
   return max > 0 ? (raw / max) * 100 : 0;
 }
 
+function renderTabs() {
+  return currentComponents
+    .map((comp) => {
+      const isActive = String(comp.componentId) === String(activeComponentId);
+      return `
+    <button onclick="switchTab('${comp.componentId}')"
+            class="px-4 py-2 text-sm font-medium border-b-2 whitespace-nowrap ${
+              isActive ? "border-wprimary text-wprimary" : "border-transparent text-gray-500 hover:text-wsecondary"
+            }">
+      ${comp.componentName}
+    </button>`;
+    })
+    .join("");
+}
+
+function switchTab(componentId) {
+  activeComponentId = componentId;
+  renderEntryTable();
+}
+
 function renderEntryTable() {
   const container = document.getElementById("entryContent");
 
@@ -193,9 +221,9 @@ function renderEntryTable() {
     return;
   }
 
-  const cols = getInputColumns();
+  const allCols = getInputColumns();
 
-  if (cols.length === 0) {
+  if (allCols.length === 0) {
     container.innerHTML = `
       <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">
         ยังไม่ได้กำหนดช่องเก็บคะแนนสำหรับวิชา/ภาคเรียนนี้ กรุณาไปที่หน้า "กำหนดช่องเก็บคะแนน" ก่อน
@@ -203,8 +231,13 @@ function renderEntryTable() {
     return;
   }
 
+  const cols = getInputColumns(activeComponentId);
+
   const headHtml = cols
-    .map((c) => `<th class="px-2 py-2 text-center whitespace-nowrap font-medium">${c.label}<br><span class="text-gray-400 font-normal">(เต็ม ${c.maxScore})</span></th>`)
+    .map(
+      (c) =>
+        `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l border-gray-200">${c.label}<br><span class="text-gray-400 font-normal">(เต็ม ${c.maxScore})</span></th>`
+    )
     .join("");
 
   const bodyHtml = currentStudents
@@ -213,7 +246,7 @@ function renderEntryTable() {
         .map((c, ci) => {
           const val = currentScores[scoreKey(st.studentId, c.componentId, c.subComponentId)];
           return `
-        <td class="px-1 py-1">
+        <td class="px-1 py-1 border-l border-gray-200">
           <input type="number" min="0" max="${c.maxScore}" step="any"
                  data-si="${si}" data-ci="${ci}"
                  data-student-id="${st.studentId}" data-component-id="${c.componentId}" data-sub-component-id="${c.subComponentId}"
@@ -225,11 +258,11 @@ function renderEntryTable() {
         .join("");
 
       return `
-    <tr class="border-b border-gray-100" data-row-student="${st.studentId}">
+    <tr class="${si % 2 === 0 ? "bg-white" : "bg-gray-50"}" data-row-student="${st.studentId}">
       <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap">${st.studentNumber}</td>
-      <td class="px-3 py-2 text-gray-700 whitespace-nowrap">${st.fullName}</td>
+      <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l border-gray-200">${st.fullName}</td>
       ${cellsHtml}
-      <td class="px-3 py-2 text-center font-semibold text-wprimary row-total" data-total-for="${st.studentId}">
+      <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l border-gray-200" data-total-for="${st.studentId}">
         ${computeRowTotal(st.studentId).toFixed(2)}
       </td>
     </tr>`;
@@ -238,14 +271,17 @@ function renderEntryTable() {
 
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow overflow-hidden">
+      <div class="flex overflow-x-auto border-b border-gray-100">
+        ${renderTabs()}
+      </div>
       <div class="overflow-x-auto">
         <table id="scoreTable" class="w-full text-sm">
           <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
               <th class="px-3 py-2 text-center w-16">เลขที่</th>
-              <th class="px-3 py-2 text-left">ชื่อ-สกุล</th>
+              <th class="px-3 py-2 text-left border-l border-gray-200">ชื่อ-สกุล</th>
               ${headHtml}
-              <th class="px-3 py-2 text-center">คะแนน (ฐาน 100)</th>
+              <th class="px-3 py-2 text-center border-l border-gray-200">คะแนน (ฐาน 100)</th>
             </tr>
           </thead>
           <tbody>${bodyHtml}</tbody>
