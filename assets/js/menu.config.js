@@ -56,6 +56,15 @@ const MENU_CONFIG = [
     label: "จัดนักเรียนเข้าห้องเรียน",
     href: "enrollments-manage.html",
   },  
+
+    {
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    icon: "fa-user-graduate",
+    label: "จัดการข้อมูลนักเรียน",
+    href: "students-manage.html",
+  },
+
+  
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-book",
@@ -63,12 +72,6 @@ const MENU_CONFIG = [
     href: "subjects-manage.html",
   }, 
 
-  {
-    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
-    icon: "fa-user-graduate",
-    label: "จัดการข้อมูลนักเรียน",
-    href: "students-manage.html",
-  },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-clipboard-check",
