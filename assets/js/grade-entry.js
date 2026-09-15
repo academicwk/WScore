@@ -268,3 +268,90 @@ function onScoreInput(input) {
   const subComponentId = input.dataset.subComponentId;
 
   const key = scoreKey(studentId, componentId, subComponentId);
+  const val = input.value === "" ? undefined : Number(input.value);
+
+  if (val === undefined) {
+    delete currentScores[key];
+  } else {
+    currentScores[key] = val;
+  }
+
+  const totalCell = document.querySelector(`[data-total-for="${studentId}"]`);
+  if (totalCell) totalCell.textContent = computeRowTotal(studentId).toFixed(2);
+}
+
+function handleGridPaste(e) {
+  const target = e.target;
+  if (!target.classList || !target.classList.contains("score-input")) return;
+
+  const text = (e.clipboardData || window.clipboardData).getData("text");
+  if (!text) return;
+
+  e.preventDefault();
+
+  const rows = text.replace(/\r/g, "").split("\n").filter((r) => r.length > 0);
+  const startSi = Number(target.dataset.si);
+  const startCi = Number(target.dataset.ci);
+
+  rows.forEach((rowText, rOffset) => {
+    const cells = rowText.split("\t");
+    cells.forEach((cellText, cOffset) => {
+      const si = startSi + rOffset;
+      const ci = startCi + cOffset;
+      const cellInput = document.querySelector(`input[data-si="${si}"][data-ci="${ci}"]`);
+      if (cellInput) {
+        cellInput.value = cellText.trim();
+        onScoreInput(cellInput);
+      }
+    });
+  });
+}
+
+async function saveAllScores() {
+  const yearId = document.getElementById("yearFilter").value;
+  const subjectId = document.getElementById("subjectFilter").value;
+  const classId = document.getElementById("classFilter").value;
+  const semester = document.getElementById("semesterFilter").value;
+
+  const cols = getInputColumns();
+  const scores = [];
+
+  currentStudents.forEach((st) => {
+    cols.forEach((c) => {
+      const val = currentScores[scoreKey(st.studentId, c.componentId, c.subComponentId)];
+      if (val !== undefined && val !== null && val !== "") {
+        scores.push({
+          studentId: st.studentId,
+          componentId: c.componentId,
+          subComponentId: c.subComponentId,
+          score: val,
+        });
+      }
+    });
+  });
+
+  const btn = document.getElementById("saveScoresBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึก...';
+
+  try {
+    const result = await callApi("saveStudentScores", {
+      classId,
+      subjectId,
+      academicYearId: yearId,
+      semester,
+      scores,
+    });
+
+    if (result.status === "success") {
+      Swal.fire({ icon: "success", title: "บันทึกคะแนนสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+    } else {
+      Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+    }
+  } catch (err) {
+    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกคะแนนทั้งหมด';
+  }
+}
