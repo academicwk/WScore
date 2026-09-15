@@ -16,9 +16,15 @@ const ROLE_LABELS = {
 const MENU_CONFIG = [
   {
     roles: ["SUBJECT_TEACHER"],
+    icon: "fa-sliders",
+    label: "กำหนดช่องเก็บคะแนน",
+    href: "grading.html",
+  },
+  {
+    roles: ["SUBJECT_TEACHER"],
     icon: "fa-pen-to-square",
     label: "บันทึกคะแนนรายวิชา",
-    href: "grading.html",
+    href: "grade-entry.html",
   },
   {
     roles: ["HOMEROOM_TEACHER"],
