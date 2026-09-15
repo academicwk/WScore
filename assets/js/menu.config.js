@@ -74,6 +74,13 @@ const MENU_CONFIG = [
 
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    icon: "fa-chalkboard-user",
+    label: "จัดการมอบหมายการสอน",
+    href: "teaching-assignments-manage.html",
+  },
+  
+  {
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-clipboard-check",
     label: "ตรวจสอบ/อนุมัติผลการเรียน",
     href: "grades-approve.html",
