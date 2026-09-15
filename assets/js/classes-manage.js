@@ -19,8 +19,8 @@ async function loadPageData() {
   tbody.innerHTML = `<tr><td colspan="6" class="text-center text-gray-400 py-6">กำลังโหลดข้อมูล...</td></tr>`;
 
   try {
-    const result = await callApi("getClassesPageData");
-
+    const result = await callApiCached("getClassesPageData");
+    
     if (result.status !== "success") {
       tbody.innerHTML = `<tr><td colspan="6" class="text-center text-red-500 py-6">${result.message}</td></tr>`;
       return;
@@ -158,6 +158,7 @@ async function handleSubmitClass(e) {
 
     if (result.status === "success") {
       closeClassModal();
+      clearApiCache("getClassesPageData");
       Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
       loadClasses();
     } else {
@@ -187,6 +188,7 @@ async function deleteClass(classId) {
   const result = await callApi("deleteClass", { classId });
 
   if (result.status === "success") {
+    clearApiCache("getClassesPageData");
     Swal.fire({ icon: "success", title: "ลบสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     loadClasses();
   } else {
