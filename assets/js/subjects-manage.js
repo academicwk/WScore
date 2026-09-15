@@ -9,8 +9,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   document.getElementById("addSubjectBtn").addEventListener("click", () => openSubjectModal("add"));
   document.getElementById("subjectForm").addEventListener("submit", handleSubmitSubject);
-  document.getElementById("searchInput").addEventListener("input", handleSearch);
-
+  document.getElementById("searchInput").addEventListener("input", debounce(handleSearch, 250));
+  
   // ประเภทวิชา -> กำหนดรูปแบบการประเมินอัตโนมัติ
   document.getElementById("f-subjectType").addEventListener("change", function () {
     updateEvaluationType();
@@ -206,4 +206,14 @@ async function deleteSubject(subjectId) {
   } else {
     Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
   }
+}
+
+
+function debounce(fn, delay) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    const context = this;
+    timer = setTimeout(() => fn.apply(context, args), delay);
+  };
 }
