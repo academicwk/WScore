@@ -48,8 +48,8 @@
           <button id="sidebarToggle" class="lg:hidden text-wsecondary text-xl">
             <i class="fa-solid fa-bars"></i>
           </button>
-          <img src="assets/img/logo.png" alt="W-Score" class="h-9 object-contain">
-          <span class="hidden sm:inline text-wsecondary font-bold text-lg">W-Score</span>
+          <img src="assets/img/logo.png" alt="W-Score" class="h-12 object-contain">
+          <span class="hidden sm:inline text-wsecondary font-bold text-lg">ระบบบริหารจัดการวัดและประเมินผลการเรียนรู้<br>โรงเรียนเทศบาลวัดโขดทิมทาราม</span>
         </div>
         <div class="flex items-center gap-2 sm:gap-4">
           ${roleSwitcher}
