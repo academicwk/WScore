@@ -365,8 +365,8 @@ function renderSetup() {
     <div class="bg-white rounded-xl shadow p-5">
       <div class="flex items-center justify-between mb-2">
         <h3 class="font-semibold text-wsecondary"><i class="fa-solid fa-layer-group text-wprimary mr-1.5"></i>${comp.componentName}</h3>
-        <span class="text-sm text-gray-500">รวม ${subSum} / ${comp.maxScore} คะแนน</span>
-      </div>
+        <span class="text-sm text-gray-500">${comp.subComponents.length} ช่อง (คิดคะแนนหน่วยจากค่าเฉลี่ย เต็ม ${comp.maxScore} คะแนน)</span>
+        </div>
       <div class="divide-y divide-gray-100">${subRowsHtml}</div>
       <button onclick='openSubComponentModal(${JSON.stringify(comp.componentId)})' class="mt-3 text-wprimary hover:underline text-xs font-medium">
         <i class="fa-solid fa-plus"></i> เพิ่มช่องเก็บคะแนน
