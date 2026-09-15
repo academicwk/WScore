@@ -55,7 +55,7 @@ function renderClassOptionsForYear() {
 
 function renderEmptyTable(message) {
   document.getElementById("assignmentTableBody").innerHTML =
-    `<tr><td colspan="3" class="text-center text-gray-400 py-6">${message}</td></tr>`;
+    `<tr><td colspan="4" class="text-center text-gray-400 py-6">${message}</td></tr>`;
 }
 
 function teacherName(userId) {
@@ -67,30 +67,36 @@ function renderAssignmentTable() {
   const classId = document.getElementById("classFilter").value;
   const yearId = document.getElementById("yearFilter").value;
 
-  if (!classId) {
-    renderEmptyTable("กรุณาเลือกห้องเรียน");
+  const classesToShow = classId
+    ? allClasses.filter((c) => String(c.ClassID) === String(classId))
+    : allClasses.filter((c) => String(c.AcademicYearID) === String(yearId));
+
+  if (classesToShow.length === 0) {
+    renderEmptyTable("ไม่พบห้องเรียนในปีการศึกษานี้");
     return;
   }
 
-  const selectedClass = allClasses.find((c) => String(c.ClassID) === String(classId));
-  const subjectsForClass = selectedClass
-    ? allSubjects.filter((s) => s.GradeLevel === selectedClass.GradeLevel)
-    : [];
+  const rows = [];
+  classesToShow.forEach((cls) => {
+    allSubjects
+      .filter((s) => s.GradeLevel === cls.GradeLevel)
+      .forEach((subj) => rows.push({ cls, subj }));
+  });
 
-  const tbody = document.getElementById("assignmentTableBody");
-
-  if (subjectsForClass.length === 0) {
+  if (rows.length === 0) {
     renderEmptyTable("ไม่พบรายวิชาสำหรับระดับชั้นนี้");
     return;
   }
 
-  tbody.innerHTML = subjectsForClass
-    .map((subj) => {
+  const tbody = document.getElementById("assignmentTableBody");
+
+  tbody.innerHTML = rows
+    .map(({ cls, subj }) => {
       const assignedTeachers = allAssignments.filter(
         (a) =>
-          String(a.ClassID) === String(classId) &&
+          String(a.ClassID) === String(cls.ClassID) &&
           String(a.SubjectID) === String(subj.SubjectID) &&
-          String(a.AcademicYearID) === String(yearId)
+          String(a.AcademicYearID) === String(cls.AcademicYearID)
       );
 
       const chipsHtml =
@@ -112,12 +118,13 @@ function renderAssignmentTable() {
 
       return `
     <tr class="border-b border-gray-100">
+      <td class="px-4 py-3 text-gray-600 align-top whitespace-nowrap">${cls.GradeLevel}/${cls.RoomNumber}</td>
       <td class="px-4 py-3 font-medium text-wsecondary align-top">${subj.SubjectName}</td>
       <td class="px-4 py-3 align-top">${chipsHtml}</td>
       <td class="px-4 py-3 text-right align-top">
         ${
           canAddMore
-            ? `<button onclick='openAssignModal(${JSON.stringify(subj.SubjectID)}, ${JSON.stringify(subj.SubjectName)})' class="text-wprimary hover:underline text-xs font-medium">+ เพิ่มครู</button>`
+            ? `<button onclick='openAssignModal(${JSON.stringify(cls.ClassID)}, ${JSON.stringify(cls.AcademicYearID)}, ${JSON.stringify(cls.GradeLevel + "/" + cls.RoomNumber)}, ${JSON.stringify(subj.SubjectID)}, ${JSON.stringify(subj.SubjectName)})' class="text-wprimary hover:underline text-xs font-medium">+ เพิ่มครู</button>`
             : `<span class="text-gray-400 text-xs">ครบ 4 คนแล้ว</span>`
         }
       </td>
@@ -125,11 +132,7 @@ function renderAssignmentTable() {
     })
     .join("");
 }
-
-function openAssignModal(subjectId, subjectName) {
-  const classId = document.getElementById("classFilter").value;
-  const yearId = document.getElementById("yearFilter").value;
-
+function openAssignModal(classId, yearId, className, subjectId, subjectName) {
   const assignedTeacherIds = allAssignments
     .filter(
       (a) =>
@@ -146,6 +149,9 @@ function openAssignModal(subjectId, subjectName) {
     return;
   }
 
+  document.getElementById("f-classId").value = classId;
+  document.getElementById("f-academicYearId").value = yearId;
+  document.getElementById("f-className").value = className;
   document.getElementById("f-subjectId").value = subjectId;
   document.getElementById("f-subjectName").value = subjectName;
   document.getElementById("f-teacherUserId").innerHTML = availableTeachers
@@ -155,15 +161,11 @@ function openAssignModal(subjectId, subjectName) {
   document.getElementById("assignModal").classList.remove("hidden");
 }
 
-function closeAssignModal() {
-  document.getElementById("assignModal").classList.add("hidden");
-}
-
 async function handleSubmitAssign(e) {
   e.preventDefault();
 
-  const classId = document.getElementById("classFilter").value;
-  const yearId = document.getElementById("yearFilter").value;
+  const classId = document.getElementById("f-classId").value;
+  const yearId = document.getElementById("f-academicYearId").value;
   const subjectId = document.getElementById("f-subjectId").value;
   const teacherUserId = document.getElementById("f-teacherUserId").value;
 
