@@ -1,0 +1,270 @@
+/**
+ * W-Score : บันทึกคะแนนรายวิชา (สำหรับครูประจำวิชา)
+ * หน้ากรอกคะแนนจริง (แยกออกมาจาก grading.js ซึ่งเหลือแค่หน้ากำหนดช่องเก็บคะแนน)
+ *
+ * สูตรคะแนนหน่วย (เต็ม 10) = เฉลี่ยของ (คะแนนที่ได้ / คะแนนเต็มของช่อง) ของทุกช่องในหน่วย x 10
+ * คะแนนรวมภาคเรียน (ฐาน 100) = (ผลรวมคะแนนหน่วยทั้งหมด + คะแนนปลายภาค) / คะแนนเต็มทั้งหมด x 100
+ */
+
+let allYears = [];
+let myAssignments = [];
+let currentComponents = []; // หน่วย + ปลายภาค (จาก getGradeSetup)
+let currentStudents = [];
+let currentScores = {}; // key: studentId|componentId|subComponentId -> score
+
+document.addEventListener("DOMContentLoaded", async function () {
+  const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
+  if (!userData) return;
+
+  await loadPageData(userData.userId);
+
+  document.getElementById("yearFilter").addEventListener("change", () => {
+    renderSubjectOptionsForYear();
+    clearEntry();
+  });
+  document.getElementById("subjectFilter").addEventListener("change", () => {
+    renderClassOptionsForSubject();
+    clearEntry();
+  });
+  document.getElementById("classFilter").addEventListener("change", loadEntryIfReady);
+  document.getElementById("semesterFilter").addEventListener("change", loadEntryIfReady);
+});
+
+async function loadPageData(userId) {
+  const result = await callApiCached("getTeacherSubjectsPageData", { userId });
+  if (result.status !== "success") return;
+
+  allYears = result.data.academicYears;
+  myAssignments = result.data.assignments;
+
+  const yearOptions = allYears.map((y) => `<option value="${y.AcademicYearID}">${y.Year}</option>`).join("");
+  document.getElementById("yearFilter").innerHTML = yearOptions;
+
+  const current = allYears.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE");
+  if (current) document.getElementById("yearFilter").value = current.AcademicYearID;
+
+  renderSubjectOptionsForYear();
+}
+
+function renderSubjectOptionsForYear() {
+  const yearId = document.getElementById("yearFilter").value;
+
+  const subjectsInYear = [];
+  const seen = {};
+  myAssignments
+    .filter((a) => String(a.academicYearId) === String(yearId))
+    .forEach((a) => {
+      if (!seen[a.subjectId]) {
+        seen[a.subjectId] = true;
+        subjectsInYear.push(a);
+      }
+    });
+
+  const options = subjectsInYear.map((a) => `<option value="${a.subjectId}">${a.subjectName}</option>`).join("");
+
+  document.getElementById("subjectFilter").innerHTML = `<option value="">- เลือกวิชา -</option>` + options;
+  renderClassOptionsForSubject();
+}
+
+function renderClassOptionsForSubject() {
+  const yearId = document.getElementById("yearFilter").value;
+  const subjectId = document.getElementById("subjectFilter").value;
+
+  const classesForSubject = myAssignments.filter(
+    (a) => String(a.academicYearId) === String(yearId) && String(a.subjectId) === String(subjectId)
+  );
+
+  const options = classesForSubject
+    .map((a) => `<option value="${a.classId}">${a.className}</option>`)
+    .join("");
+
+  document.getElementById("classFilter").innerHTML = `<option value="">- เลือกห้องเรียน -</option>` + options;
+}
+
+function clearEntry() {
+  document.getElementById("classFilter").value = "";
+  document.getElementById("semesterFilter").value = "";
+  document.getElementById("entryContent").innerHTML = `
+    <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">
+      กรุณาเลือกปีการศึกษา วิชา ห้องเรียน และภาคเรียน เพื่อกรอกคะแนน
+    </div>`;
+}
+
+async function loadEntryIfReady() {
+  const yearId = document.getElementById("yearFilter").value;
+  const subjectId = document.getElementById("subjectFilter").value;
+  const classId = document.getElementById("classFilter").value;
+  const semester = document.getElementById("semesterFilter").value;
+
+  if (!yearId || !subjectId || !classId || !semester) return;
+
+  document.getElementById("entryContent").innerHTML = `
+    <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>`;
+
+  const result = await callApi("getGradeEntryPageData", {
+    subjectId,
+    academicYearId: yearId,
+    semester,
+    classId,
+  });
+
+  if (result.status !== "success") {
+    document.getElementById("entryContent").innerHTML = `
+      <div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${result.message}</div>`;
+    return;
+  }
+
+  currentComponents = result.data.components;
+  currentStudents = result.data.students;
+
+  currentScores = {};
+  (result.data.scores || []).forEach((sc) => {
+    const key = scoreKey(sc.StudentID, sc.ComponentID, sc.SubComponentID);
+    currentScores[key] = Number(sc.Score);
+  });
+
+  renderEntryTable();
+}
+
+function scoreKey(studentId, componentId, subComponentId) {
+  return `${studentId}|${componentId}|${subComponentId || ""}`;
+}
+
+// รายการ "ช่อง" ทั้งหมดที่ต้องกรอกคะแนน เรียงตามลำดับ (ใช้ทั้งตอน render และตอน paste)
+function getInputColumns() {
+  const cols = [];
+  currentComponents.forEach((comp) => {
+    if (comp.componentType === "ปลายภาค") {
+      cols.push({ componentId: comp.componentId, subComponentId: "", maxScore: comp.maxScore, label: comp.componentName, isFinal: true });
+    } else {
+      comp.subComponents.forEach((sc) => {
+        cols.push({
+          componentId: comp.componentId,
+          subComponentId: sc.subComponentId,
+          maxScore: sc.maxScore,
+          label: `${comp.componentName} - ${sc.subComponentName}`,
+          unitComponentId: comp.componentId,
+        });
+      });
+    }
+  });
+  return cols;
+}
+
+function totalMaxScore() {
+  return currentComponents.reduce((sum, comp) => sum + Number(comp.maxScore || 0), 0);
+}
+
+// คำนวณคะแนนหน่วย (เต็ม 10) จากค่าเฉลี่ยของช่องย่อยในหน่วยนั้น สำหรับนักเรียน 1 คน
+function computeUnitScore(comp, studentId) {
+  if (!comp.subComponents || comp.subComponents.length === 0) return 0;
+
+  const ratios = comp.subComponents.map((sc) => {
+    const raw = currentScores[scoreKey(studentId, comp.componentId, sc.subComponentId)];
+    const score = Number(raw) || 0;
+    const max = Number(sc.maxScore) || 1;
+    return score / max;
+  });
+
+  const avgRatio = ratios.reduce((a, b) => a + b, 0) / ratios.length;
+  return avgRatio * Number(comp.maxScore || 10);
+}
+
+function computeRowTotal(studentId) {
+  let raw = 0;
+  currentComponents.forEach((comp) => {
+    if (comp.componentType === "ปลายภาค") {
+      raw += Number(currentScores[scoreKey(studentId, comp.componentId, "")]) || 0;
+    } else {
+      raw += computeUnitScore(comp, studentId);
+    }
+  });
+
+  const max = totalMaxScore();
+  return max > 0 ? (raw / max) * 100 : 0;
+}
+
+function renderEntryTable() {
+  const container = document.getElementById("entryContent");
+
+  if (currentStudents.length === 0) {
+    container.innerHTML = `
+      <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">ไม่พบนักเรียนในห้องเรียนนี้</div>`;
+    return;
+  }
+
+  const cols = getInputColumns();
+
+  if (cols.length === 0) {
+    container.innerHTML = `
+      <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">
+        ยังไม่ได้กำหนดช่องเก็บคะแนนสำหรับวิชา/ภาคเรียนนี้ กรุณาไปที่หน้า "กำหนดช่องเก็บคะแนน" ก่อน
+      </div>`;
+    return;
+  }
+
+  const headHtml = cols
+    .map((c) => `<th class="px-2 py-2 text-center whitespace-nowrap font-medium">${c.label}<br><span class="text-gray-400 font-normal">(เต็ม ${c.maxScore})</span></th>`)
+    .join("");
+
+  const bodyHtml = currentStudents
+    .map((st, si) => {
+      const cellsHtml = cols
+        .map((c, ci) => {
+          const val = currentScores[scoreKey(st.studentId, c.componentId, c.subComponentId)];
+          return `
+        <td class="px-1 py-1">
+          <input type="number" min="0" max="${c.maxScore}" step="any"
+                 data-si="${si}" data-ci="${ci}"
+                 data-student-id="${st.studentId}" data-component-id="${c.componentId}" data-sub-component-id="${c.subComponentId}"
+                 value="${val === undefined ? "" : val}"
+                 oninput="onScoreInput(this)"
+                 class="score-input w-16 text-center border border-gray-200 rounded-lg px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+        </td>`;
+        })
+        .join("");
+
+      return `
+    <tr class="border-b border-gray-100" data-row-student="${st.studentId}">
+      <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap">${st.studentNumber}</td>
+      <td class="px-3 py-2 text-gray-700 whitespace-nowrap">${st.fullName}</td>
+      ${cellsHtml}
+      <td class="px-3 py-2 text-center font-semibold text-wprimary row-total" data-total-for="${st.studentId}">
+        ${computeRowTotal(st.studentId).toFixed(2)}
+      </td>
+    </tr>`;
+    })
+    .join("");
+
+  container.innerHTML = `
+    <div class="bg-white rounded-xl shadow overflow-hidden">
+      <div class="overflow-x-auto">
+        <table id="scoreTable" class="w-full text-sm">
+          <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
+            <tr>
+              <th class="px-3 py-2 text-center w-16">เลขที่</th>
+              <th class="px-3 py-2 text-left">ชื่อ-สกุล</th>
+              ${headHtml}
+              <th class="px-3 py-2 text-center">คะแนน (ฐาน 100)</th>
+            </tr>
+          </thead>
+          <tbody>${bodyHtml}</tbody>
+        </table>
+      </div>
+      <div class="flex justify-end p-4 border-t border-gray-100">
+        <button onclick="saveAllScores()" id="saveScoresBtn"
+                class="px-5 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">
+          <i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกคะแนนทั้งหมด
+        </button>
+      </div>
+    </div>`;
+
+  document.getElementById("scoreTable").addEventListener("paste", handleGridPaste);
+}
+
+function onScoreInput(input) {
+  const studentId = input.dataset.studentId;
+  const componentId = input.dataset.componentId;
+  const subComponentId = input.dataset.subComponentId;
+
+  const key = scoreKey(studentId, componentId, subComponentId);
