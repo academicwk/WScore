@@ -339,6 +339,15 @@ function onScoreInput(input) {
   const componentId = input.dataset.componentId;
   const subComponentId = input.dataset.subComponentId;
 
+  // ไม่อนุญาตให้กรอกคะแนนเกินคะแนนเต็มของช่องนั้น (และไม่ต่ำกว่า 0)
+  const maxScore = Number(input.max);
+  if (input.value !== "" && !isNaN(Number(input.value))) {
+    let num = Number(input.value);
+    if (maxScore && num > maxScore) num = maxScore;
+    if (num < 0) num = 0;
+    if (num !== Number(input.value)) input.value = num;
+  }
+
   const key = scoreKey(studentId, componentId, subComponentId);
   const val = input.value === "" ? undefined : Number(input.value);
 
