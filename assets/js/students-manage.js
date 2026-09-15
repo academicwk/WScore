@@ -3,6 +3,9 @@
  */
 
 let allStudents = [];
+let currentFilteredStudents = [];
+let currentPage = 1;
+const PAGE_SIZE = 50;
 
 document.addEventListener("DOMContentLoaded", function () {
   loadStudents();
