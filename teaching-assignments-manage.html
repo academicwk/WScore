@@ -42,13 +42,14 @@
           <table class="w-full text-sm">
             <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
               <tr>
+                <th class="px-4 py-3 text-left w-28">ห้องเรียน</th>
                 <th class="px-4 py-3 text-left">รายวิชา</th>
                 <th class="px-4 py-3 text-left">ครูผู้สอน</th>
                 <th class="px-4 py-3 text-right w-32">การจัดการ</th>
               </tr>
             </thead>
             <tbody id="assignmentTableBody">
-              <tr><td colspan="3" class="text-center text-gray-400 py-6">กรุณาเลือกห้องเรียน</td></tr>
+              <tr><td colspan="4" class="text-center text-gray-400 py-6">กำลังโหลดข้อมูล...</td></tr>
             </tbody>
           </table>
         </div>
@@ -71,6 +72,12 @@
 
         <form id="assignForm" class="p-5 space-y-4">
           <input type="hidden" id="f-subjectId" value="">
+          <input type="hidden" id="f-classId" value="">
+          <input type="hidden" id="f-academicYearId" value="">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ห้องเรียน</label>
+            <input id="f-className" type="text" disabled class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-100 text-gray-600">
+          </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">รายวิชา</label>
             <input id="f-subjectName" type="text" disabled class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-gray-100 text-gray-600">
