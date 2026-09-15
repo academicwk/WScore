@@ -12,13 +12,24 @@ document.addEventListener("DOMContentLoaded", function () {
 
   document.getElementById("addStudentBtn").addEventListener("click", () => openStudentModal("add"));
   document.getElementById("studentForm").addEventListener("submit", handleSubmitStudent);
-  document.getElementById("searchInput").addEventListener("input", handleSearch);
+  document.getElementById("searchInput").addEventListener("input", debounce(handleSearch, 250));
+  document.getElementById("prevPageBtn").addEventListener("click", () => goToPage(currentPage - 1));
+  document.getElementById("nextPageBtn").addEventListener("click", () => goToPage(currentPage + 1));
 
   // คำนำหน้า -> กำหนดเพศอัตโนมัติ
   document.getElementById("f-prefixName").addEventListener("change", function () {
     updateGenderFromPrefix();
   });
 });
+
+function debounce(fn, delay) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    const context = this;
+    timer = setTimeout(() => fn.apply(context, args), delay);
+  };
+}
 
 function updateGenderFromPrefix() {
   const prefix = document.getElementById("f-prefixName").value;
@@ -46,14 +57,22 @@ async function loadStudents() {
 }
 
 function renderStudentTable(students) {
+  currentFilteredStudents = students;
+  const totalPages = Math.max(1, Math.ceil(currentFilteredStudents.length / PAGE_SIZE));
+  currentPage = Math.min(currentPage, totalPages);
+
   const tbody = document.getElementById("studentTableBody");
 
-  if (students.length === 0) {
+  if (currentFilteredStudents.length === 0) {
     tbody.innerHTML = `<tr><td colspan="6" class="text-center text-gray-400 py-6">ไม่พบข้อมูลนักเรียน</td></tr>`;
+    renderPaginationControls(totalPages);
     return;
   }
 
-  tbody.innerHTML = students
+  const start = (currentPage - 1) * PAGE_SIZE;
+  const pageItems = currentFilteredStudents.slice(start, start + PAGE_SIZE);
+
+  tbody.innerHTML = pageItems
     .map(
       (s) => `
     <tr class="border-b border-gray-100">
@@ -71,6 +90,26 @@ function renderStudentTable(students) {
     </tr>`
     )
     .join("");
+
+  renderPaginationControls(totalPages);
+}
+
+function renderPaginationControls(totalPages) {
+  const total = currentFilteredStudents.length;
+  const start = total === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+  const end = Math.min(currentPage * PAGE_SIZE, total);
+
+  document.getElementById("paginationInfo").textContent =
+    total === 0 ? "" : `แสดง ${start}-${end} จากทั้งหมด ${total} คน`;
+
+  document.getElementById("prevPageBtn").disabled = currentPage <= 1;
+  document.getElementById("nextPageBtn").disabled = currentPage >= totalPages;
+}
+
+function goToPage(page) {
+  const totalPages = Math.max(1, Math.ceil(currentFilteredStudents.length / PAGE_SIZE));
+  currentPage = Math.min(Math.max(1, page), totalPages);
+  renderStudentTable(currentFilteredStudents);
 }
 
 function statusBadgeClass(status) {
@@ -88,6 +127,7 @@ function formatDate(value) {
 
 function handleSearch() {
   const keyword = this.value.trim().toLowerCase();
+  currentPage = 1;
   const filtered = allStudents.filter(
     (s) =>
       String(s.StudentID).toLowerCase().includes(keyword) ||
