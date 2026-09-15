@@ -253,16 +253,16 @@ function renderEntryTable() {
   const activeComp = currentComponents.find((c) => String(c.componentId) === String(activeComponentId));
   const showUnitSummaryCols = !!activeComp && activeComp.componentType !== "ปลายภาค";
 
-  const headHtml =
+   const headHtml =
     cols
       .map(
         (c) =>
-          `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-gray-400">${c.label}<br><span class="text-gray-400 font-normal">(เต็ม ${c.maxScore})</span></th>`
+          `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">${c.label}<br><span class="text-gray-400 font-normal">(เต็ม ${c.maxScore})</span></th>`
       )
       .join("") +
     (showUnitSummaryCols
-      ? `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-gray-400">คะแนนดิบรวม</th>
-         <th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-gray-400">คะแนนหน่วย<br><span class="text-gray-400 font-normal">(เต็ม ${activeComp.maxScore})</span></th>`
+      ? `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนดิบรวม</th>
+         <th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนหน่วย<br><span class="text-gray-400 font-normal">(เต็ม ${activeComp.maxScore})</span></th>`
       : "");
 
   const bodyHtml = currentStudents
