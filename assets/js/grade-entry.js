@@ -258,8 +258,8 @@ function renderEntryTable() {
         .join("");
 
       return `
-    <tr class="${si % 2 === 0 ? "bg-white" : "bg-gray-50"}" data-row-student="${st.studentId}">
-      <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap">${st.studentNumber}</td>
+    <tr class="${si % 2 === 0 ? "bg-white" : "bg-gray-200"}" data-row-student="${st.studentId}">
+    <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap">${st.studentNumber}</td>
       <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l border-gray-200">${st.fullName}</td>
       ${cellsHtml}
       <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l border-gray-200" data-total-for="${st.studentId}">
