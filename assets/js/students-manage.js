@@ -42,8 +42,8 @@ async function loadStudents() {
   tbody.innerHTML = `<tr><td colspan="6" class="text-center text-gray-400 py-6">กำลังโหลดข้อมูล...</td></tr>`;
 
   try {
-    const result = await callApi("getStudents");
-
+    const result = await callApiCached("getStudents");
+    
     if (result.status !== "success") {
       tbody.innerHTML = `<tr><td colspan="6" class="text-center text-red-500 py-6">${result.message}</td></tr>`;
       return;
@@ -207,6 +207,7 @@ async function handleSubmitStudent(e) {
 
     if (result.status === "success") {
       closeStudentModal();
+      clearApiCache("getStudents");
       Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
       loadStudents();
     } else {
@@ -243,6 +244,7 @@ async function deleteStudent(studentId) {
   const result = await callApi("deleteStudent", { studentId });
 
   if (result.status === "success") {
+    clearApiCache("getStudents");
     Swal.fire({ icon: "success", title: "ลบสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     loadStudents();
   } else {
