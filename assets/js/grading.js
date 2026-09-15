@@ -354,8 +354,7 @@ function renderSetup() {
       <div class="flex items-center justify-between border-b border-gray-100 py-2 text-sm">
         <span class="text-gray-700">${sc.subComponentName}</span>
         <div class="flex items-center gap-3">
-        <span class="text-sm text-gray-500">${comp.subComponents.length} ช่อง (คิดคะแนนหน่วยจากค่าเฉลี่ย เต็ม ${comp.maxScore} คะแนน)</span>
-        <button onclick="removeSubComponent('${sc.subComponentId}')" class="text-red-500 hover:underline text-xs">ลบ</button>
+        <span class="text-sm text-gray-500">คะแนนดิบรวม ${comp.subComponents.length * 10} คะแนน (${comp.subComponents.length} ช่อง) &rarr; คะแนนจริง ${comp.maxScore} คะแนน (เฉลี่ย)</span>        <button onclick="removeSubComponent('${sc.subComponentId}')" class="text-red-500 hover:underline text-xs">ลบ</button>
         </div>
       </div>`
               )
