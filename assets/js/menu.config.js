@@ -27,6 +27,12 @@ const MENU_CONFIG = [
     href: "grade-entry.html",
   },
   {
+    roles: ["SUBJECT_TEACHER"],
+    icon: "fa-gavel",
+    label: "ตัดสินผลการเรียน",
+    href: "grade-finalize.html",
+  },
+  {
     roles: ["HOMEROOM_TEACHER"],
     icon: "fa-chalkboard-user",
     label: "สรุปข้อมูลประจำชั้น",
