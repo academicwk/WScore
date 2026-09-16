@@ -194,18 +194,21 @@ function formatUnitRaw(comp, studentId) {
   return `${raw}/${max}`;
 }
 
-// คะแนนดิบรวมทุกหน่วย (ไม่รวมปลายภาค) แสดงเป็น "ได้/เต็ม" - แสดงตลอดทุกแท็บ
-function computeAllUnitsRaw(studentId) {
-  let raw = 0;
-  let max = 0;
+// ผลรวมคะแนนเต็มของทุกหน่วย (ไม่รวมปลายภาค)
+function unitsMaxScore() {
+  return currentComponents.reduce(
+    (sum, comp) => (comp.componentType === "ปลายภาค" ? sum : sum + Number(comp.maxScore || 0)),
+    0
+  );
+}
+
+// คะแนนจริงทุกหน่วย = ผลรวมคะแนนหน่วย (ที่คิดเฉลี่ยแล้ว) ของทุกหน่วย (ไม่รวมปลายภาค) - ใช้แสดงในแท็บปลายภาค
+function computeAllUnitsScore(studentId) {
+  let sum = 0;
   currentComponents.forEach((comp) => {
-    if (comp.componentType === "ปลายภาค") return;
-    comp.subComponents.forEach((sc) => {
-      raw += Number(currentScores[scoreKey(studentId, comp.componentId, sc.subComponentId)]) || 0;
-      max += Number(sc.maxScore) || 0;
-    });
+    if (comp.componentType !== "ปลายภาค") sum += computeUnitScore(comp, studentId);
   });
-  return `${raw}/${max}`;
+  return sum;
 }
 
 // คะแนนระหว่างภาค (ผลรวมคะแนนหน่วยที่คิดเฉลี่ยแล้วทุกหน่วย + คะแนนปลายภาคดิบ) ก่อนนำไปคิดเป็นฐาน 100
@@ -269,19 +272,26 @@ function renderEntryTable() {
   const cols = getInputColumns(activeComponentId);
 
   const activeComp = currentComponents.find((c) => String(c.componentId) === String(activeComponentId));
-  const showUnitSummaryCols = !!activeComp && activeComp.componentType !== "ปลายภาค";
+  const isFinalTab = !!activeComp && activeComp.componentType === "ปลายภาค";
+  const showUnitSummaryCols = !!activeComp && !isFinalTab;
+  const semesterValue = document.getElementById("semesterFilter").value || "";
 
-  const headHtml =
-    cols
-      .map(
-        (c) =>
-          `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">${c.label}<br><span class="text-gray-400 font-normal">(เต็ม ${c.maxScore})</span></th>`
-      )
-      .join("") +
-    (showUnitSummaryCols
-      ? `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนดิบรวม</th>
-         <th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนหน่วย<br><span class="text-gray-400 font-normal">(เต็ม ${activeComp.maxScore})</span></th>`
-      : "");
+  const inputColsHeadHtml = cols
+    .map(
+      (c) =>
+        `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">${c.label}<br><span class="text-gray-400 font-normal">(เต็ม ${c.maxScore})</span></th>`
+    )
+    .join("");
+
+  const headHtml = isFinalTab
+    ? `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนจริงทุกหน่วย<br><span class="text-gray-400 font-normal">(เต็ม ${unitsMaxScore()})</span></th>` +
+      inputColsHeadHtml +
+      `<th class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">คะแนนภาคเรียนที่ ${semesterValue}<br><span class="text-gray-400 font-normal">(เต็ม ${totalMaxScore()})</span></th>`
+    : inputColsHeadHtml +
+      (showUnitSummaryCols
+        ? `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนดิบรวม</th>
+         <th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนจริงหน่วย<br><span class="text-gray-400 font-normal">(เต็ม ${activeComp.maxScore})</span></th>`
+        : "");
 
   const bodyHtml = currentStudents
     .map((st, si) => {
@@ -310,21 +320,28 @@ function renderEntryTable() {
       </td>`
         : "";
 
+      const allUnitsScoreHtml = isFinalTab
+        ? `
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-allunitsscore-for="${st.studentId}">
+        ${computeAllUnitsScore(st.studentId).toFixed(2)}
+      </td>`
+        : "";
+
+      const totalHtml = isFinalTab
+        ? `
+      <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l-2 border-b-2 border-gray-400" data-total-for="${st.studentId}">
+        ${computeRowTotal(st.studentId).toFixed(2)}
+      </td>`
+        : "";
+
       return `
     <tr class="${si % 2 === 0 ? "bg-sky-200" : "bg-slate-300"}" data-row-student="${st.studentId}">
       <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap border-b-2 border-gray-400">${st.studentNumber}</td>
       <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-b-2 border-gray-400">${st.fullName}</td>
+      ${allUnitsScoreHtml}
       ${cellsHtml}
       ${unitSummaryHtml}
-      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-allunits-for="${st.studentId}">
-        ${computeAllUnitsRaw(st.studentId)}
-      </td>
-      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-combined-for="${st.studentId}">
-        ${computeCombinedRaw(st.studentId).toFixed(2)}
-      </td>
-      <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l-2 border-b-2 border-gray-400" data-total-for="${st.studentId}">
-        ${computeRowTotal(st.studentId).toFixed(2)}
-      </td>
+      ${totalHtml}
     </tr>`;
     })
     .join("");
@@ -341,9 +358,6 @@ function renderEntryTable() {
               <th class="px-3 py-2 text-center w-16 border-b-2 border-gray-400">เลขที่</th>
               <th class="px-3 py-2 text-left border-l-2 border-b-2 border-gray-400">ชื่อ-สกุล</th>
               ${headHtml}
-              <th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนรวมทุกหน่วย<br><span class="text-gray-400 font-normal">(คะแนนดิบ)</span></th>
-              <th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนระหว่างภาค<br><span class="text-gray-400 font-normal">(เต็ม ${totalMaxScore()})</span></th>
-              <th class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">คะแนน (ฐาน 100)</th>
             </tr>
           </thead>
           <tbody>${bodyHtml}</tbody>
@@ -391,9 +405,11 @@ function onScoreInput(input) {
     cell.classList.add(cellBgClass(val));
   }
 
-  // อัปเดตคะแนนดิบรวม/คะแนนหน่วยของแถวนี้ (เฉพาะตอนเปิดแท็บหน่วยอยู่)
+  // อัปเดตคะแนนของแถวนี้ตามชนิดแท็บที่กำลังเปิดอยู่
   const activeComp = currentComponents.find((c) => String(c.componentId) === String(activeComponentId));
+
   if (activeComp && activeComp.componentType !== "ปลายภาค") {
+    // แท็บหน่วย: อัปเดตคะแนนดิบรวม + คะแนนจริงหน่วย
     const rawCell = document.querySelector(`[data-raw-for="${studentId}"]`);
     if (rawCell) rawCell.textContent = formatUnitRaw(activeComp, studentId);
 
@@ -401,15 +417,14 @@ function onScoreInput(input) {
     if (unitCell) unitCell.textContent = computeUnitScore(activeComp, studentId).toFixed(2);
   }
 
-  // อัปเดตคะแนนรวมทุกหน่วย (คะแนนดิบ) และคะแนนระหว่างภาค (แสดงตลอดทุกแท็บ)
-  const allUnitsCell = document.querySelector(`[data-allunits-for="${studentId}"]`);
-  if (allUnitsCell) allUnitsCell.textContent = computeAllUnitsRaw(studentId);
+  if (activeComp && activeComp.componentType === "ปลายภาค") {
+    // แท็บปลายภาค: อัปเดตคะแนนจริงทุกหน่วย + คะแนนภาคเรียน
+    const allUnitsScoreCell = document.querySelector(`[data-allunitsscore-for="${studentId}"]`);
+    if (allUnitsScoreCell) allUnitsScoreCell.textContent = computeAllUnitsScore(studentId).toFixed(2);
 
-  const combinedCell = document.querySelector(`[data-combined-for="${studentId}"]`);
-  if (combinedCell) combinedCell.textContent = computeCombinedRaw(studentId).toFixed(2);
-
-  const totalCell = document.querySelector(`[data-total-for="${studentId}"]`);
-  if (totalCell) totalCell.textContent = computeRowTotal(studentId).toFixed(2);
+    const totalCell = document.querySelector(`[data-total-for="${studentId}"]`);
+    if (totalCell) totalCell.textContent = computeRowTotal(studentId).toFixed(2);
+  }
 }
 
 function handleGridPaste(e) {
