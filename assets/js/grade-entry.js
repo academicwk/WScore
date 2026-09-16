@@ -322,7 +322,8 @@ function renderEntryTable() {
           <tbody>${bodyHtml}</tbody>
         </table>
       </div>
-      <div class="flex justify-end p-4 border-t border-gray-100">
+      <div class="flex items-center justify-end gap-3 p-4 border-t border-gray-100">
+        <span id="saveStatus" class="text-xs text-gray-500"></span>
         <button onclick="saveAllScores()" id="saveScoresBtn"
                 class="px-5 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">
           <i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกคะแนนทั้งหมด
@@ -428,8 +429,14 @@ async function saveAllScores() {
   });
 
   const btn = document.getElementById("saveScoresBtn");
+  const statusEl = document.getElementById("saveStatus");
+
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึก...';
+  if (statusEl) {
+    statusEl.className = "text-xs text-gray-500";
+    statusEl.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังบันทึก...';
+  }
 
   try {
     const result = await callApi("saveStudentScores", {
@@ -441,11 +448,24 @@ async function saveAllScores() {
     });
 
     if (result.status === "success") {
+      const timeStr = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      if (statusEl) {
+        statusEl.className = "text-xs text-green-600";
+        statusEl.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i>บันทึกสำเร็จเมื่อ ${timeStr} น.`;
+      }
       Swal.fire({ icon: "success", title: "บันทึกคะแนนสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     } else {
+      if (statusEl) {
+        statusEl.className = "text-xs text-red-600";
+        statusEl.innerHTML = `<i class="fa-solid fa-circle-xmark mr-1"></i>บันทึกไม่สำเร็จ`;
+      }
       Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
     }
   } catch (err) {
+    if (statusEl) {
+      statusEl.className = "text-xs text-red-600";
+      statusEl.innerHTML = '<i class="fa-solid fa-circle-xmark mr-1"></i>เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ';
+    }
     Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
   } finally {
     btn.disabled = false;
