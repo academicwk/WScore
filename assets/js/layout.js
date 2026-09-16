@@ -117,9 +117,12 @@
         confirmButtonColor: "#d33",
       }).then((result) => {
         if (result.isConfirmed) {
-          sessionStorage.removeItem("wscore_user");
-          sessionStorage.removeItem("wscore_current_role");
-          window.location.href = "login.html";
+          callApi("logout", {}).finally(() => {
+            sessionStorage.removeItem("wscore_user");
+            sessionStorage.removeItem("wscore_token");
+            sessionStorage.removeItem("wscore_current_role");
+            window.location.href = "login.html";
+          });
         }
       });
     });
