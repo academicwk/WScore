@@ -178,15 +178,7 @@ function computeUnitScore(comp, studentId) {
 }
 
 function computeRowTotal(studentId) {
-  let raw = 0;
-  currentComponents.forEach((comp) => {
-    if (comp.componentType === "ปลายภาค") {
-      raw += Number(currentScores[scoreKey(studentId, comp.componentId, "")]) || 0;
-    } else {
-      raw += computeUnitScore(comp, studentId);
-    }
-  });
-
+  const raw = computeCombinedRaw(studentId);
   const max = totalMaxScore();
   return max > 0 ? (raw / max) * 100 : 0;
 }
@@ -200,6 +192,33 @@ function formatUnitRaw(comp, studentId) {
     max += Number(sc.maxScore) || 0;
   });
   return `${raw}/${max}`;
+}
+
+// คะแนนดิบรวมทุกหน่วย (ไม่รวมปลายภาค) แสดงเป็น "ได้/เต็ม" - แสดงตลอดทุกแท็บ
+function computeAllUnitsRaw(studentId) {
+  let raw = 0;
+  let max = 0;
+  currentComponents.forEach((comp) => {
+    if (comp.componentType === "ปลายภาค") return;
+    comp.subComponents.forEach((sc) => {
+      raw += Number(currentScores[scoreKey(studentId, comp.componentId, sc.subComponentId)]) || 0;
+      max += Number(sc.maxScore) || 0;
+    });
+  });
+  return `${raw}/${max}`;
+}
+
+// คะแนนระหว่างภาค (ผลรวมคะแนนหน่วยที่คิดเฉลี่ยแล้วทุกหน่วย + คะแนนปลายภาคดิบ) ก่อนนำไปคิดเป็นฐาน 100
+function computeCombinedRaw(studentId) {
+  let raw = 0;
+  currentComponents.forEach((comp) => {
+    if (comp.componentType === "ปลายภาค") {
+      raw += Number(currentScores[scoreKey(studentId, comp.componentId, "")]) || 0;
+    } else {
+      raw += computeUnitScore(comp, studentId);
+    }
+  });
+  return raw;
 }
 
 // สีพื้นหลังของช่องกรอกคะแนน: ยังไม่กรอก = เหลืองอ่อน, กรอกแล้วต่ำกว่า 6 = แดงอ่อน, กรอกแล้ว 6 ขึ้นไป = เขียวอ่อน
@@ -297,6 +316,12 @@ function renderEntryTable() {
       <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-b-2 border-gray-400">${st.fullName}</td>
       ${cellsHtml}
       ${unitSummaryHtml}
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-allunits-for="${st.studentId}">
+        ${computeAllUnitsRaw(st.studentId)}
+      </td>
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-combined-for="${st.studentId}">
+        ${computeCombinedRaw(st.studentId).toFixed(2)}
+      </td>
       <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l-2 border-b-2 border-gray-400" data-total-for="${st.studentId}">
         ${computeRowTotal(st.studentId).toFixed(2)}
       </td>
@@ -316,6 +341,8 @@ function renderEntryTable() {
               <th class="px-3 py-2 text-center w-16 border-b-2 border-gray-400">เลขที่</th>
               <th class="px-3 py-2 text-left border-l-2 border-b-2 border-gray-400">ชื่อ-สกุล</th>
               ${headHtml}
+              <th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนรวมทุกหน่วย<br><span class="text-gray-400 font-normal">(คะแนนดิบ)</span></th>
+              <th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนระหว่างภาค<br><span class="text-gray-400 font-normal">(เต็ม ${totalMaxScore()})</span></th>
               <th class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">คะแนน (ฐาน 100)</th>
             </tr>
           </thead>
@@ -373,6 +400,13 @@ function onScoreInput(input) {
     const unitCell = document.querySelector(`[data-unit-for="${studentId}"]`);
     if (unitCell) unitCell.textContent = computeUnitScore(activeComp, studentId).toFixed(2);
   }
+
+  // อัปเดตคะแนนรวมทุกหน่วย (คะแนนดิบ) และคะแนนระหว่างภาค (แสดงตลอดทุกแท็บ)
+  const allUnitsCell = document.querySelector(`[data-allunits-for="${studentId}"]`);
+  if (allUnitsCell) allUnitsCell.textContent = computeAllUnitsRaw(studentId);
+
+  const combinedCell = document.querySelector(`[data-combined-for="${studentId}"]`);
+  if (combinedCell) combinedCell.textContent = computeCombinedRaw(studentId).toFixed(2);
 
   const totalCell = document.querySelector(`[data-total-for="${studentId}"]`);
   if (totalCell) totalCell.textContent = computeRowTotal(studentId).toFixed(2);
