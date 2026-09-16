@@ -5,12 +5,26 @@
 const GAS_API_URL = "https://script.google.com/macros/s/AKfycbz-8xNX3j0o__QyrJVg31eGFR8Mkgj3bUQotmeRCOsDJLUMxNOIu75tPXkuKTH8yubv/exec";
 
 async function callApi(action, payload = {}) {
+  const token = sessionStorage.getItem("wscore_token") || "";
+
   const response = await fetch(GAS_API_URL, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({ action, token, ...payload }),
   });
-  return response.json();
+  const result = await response.json();
+
+  // เซสชันหมดอายุ/ไม่ถูกต้อง -> เคลียร์ข้อมูลผู้ใช้งานแล้วเด้งกลับหน้า Login
+  if (result && result.sessionExpired) {
+    sessionStorage.removeItem("wscore_user");
+    sessionStorage.removeItem("wscore_token");
+    sessionStorage.removeItem("wscore_current_role");
+    if (!window.location.pathname.endsWith("login.html")) {
+      window.location.href = "login.html";
+    }
+  }
+
+  return result;
 }
 
 
