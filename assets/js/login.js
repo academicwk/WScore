@@ -49,6 +49,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (result.status === "success") {
         // เก็บข้อมูล Session ของผู้ใช้งาน (User + Roles) ไว้ใช้ทั่วทั้งระบบ
         sessionStorage.setItem("wscore_user", JSON.stringify(result.data));
+        sessionStorage.setItem("wscore_token", result.data.token);
 
         Swal.fire({
           icon: "success",
