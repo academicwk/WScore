@@ -32,6 +32,12 @@ const MENU_CONFIG = [
     label: "ตัดสินผลการเรียน",
     href: "grade-finalize.html",
   },
+{
+  roles: ["SUBJECT_TEACHER"],
+  icon: "fa-file-pdf",
+  label: "รายงาน ปถ.05",
+  href: "grade-report.html",
+},  
   {
     roles: ["HOMEROOM_TEACHER"],
     icon: "fa-chalkboard-user",
