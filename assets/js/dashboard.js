@@ -35,6 +35,87 @@ function progressBarHtml(label, percent) {
     </div>`;
 }
 
+// ชุดสีสำหรับแยกแต่ละรายวิชาให้เห็นชัดในแถวความคืบหน้า (วนซ้ำได้ถ้ามีวิชาเกินจำนวนสี)
+const SUBJECT_COLOR_PALETTE = [
+  { border: "border-sky-300", text: "text-sky-700", bg: "bg-sky-50", bar: "bg-sky-500" },
+  { border: "border-emerald-300", text: "text-emerald-700", bg: "bg-emerald-50", bar: "bg-emerald-500" },
+  { border: "border-amber-300", text: "text-amber-700", bg: "bg-amber-50", bar: "bg-amber-500" },
+  { border: "border-rose-300", text: "text-rose-700", bg: "bg-rose-50", bar: "bg-rose-500" },
+  { border: "border-violet-300", text: "text-violet-700", bg: "bg-violet-50", bar: "bg-violet-500" },
+  { border: "border-cyan-300", text: "text-cyan-700", bg: "bg-cyan-50", bar: "bg-cyan-500" },
+  { border: "border-lime-300", text: "text-lime-700", bg: "bg-lime-50", bar: "bg-lime-500" },
+  { border: "border-fuchsia-300", text: "text-fuchsia-700", bg: "bg-fuchsia-50", bar: "bg-fuchsia-500" },
+];
+
+// สร้างตารางสี subjectId -> สี โดยเรียงตามลำดับที่เจอครั้งแรก เพื่อให้สีของแต่ละวิชาคงที่เหมือนกันทั้ง 2 ภาคเรียน
+function buildSubjectColorMap(progress) {
+  const map = {};
+  let nextIndex = 0;
+  progress.forEach((p) => {
+    const key = String(p.subjectId);
+    if (!(key in map)) {
+      map[key] = SUBJECT_COLOR_PALETTE[nextIndex % SUBJECT_COLOR_PALETTE.length];
+      nextIndex++;
+    }
+  });
+  return map;
+}
+
+function miniProgressBarHtml(label, percent, color) {
+  return `
+    <div class="flex items-center gap-1.5">
+      <span class="text-[10px] text-gray-500 w-14 truncate" title="${label}">${label}</span>
+      <div class="flex-1 bg-gray-100 rounded-full h-1.5">
+        <div class="${color.bar} h-1.5 rounded-full" style="width:${percent}%"></div>
+      </div>
+      <span class="text-[10px] text-gray-500 w-8 text-right">${percent}%</span>
+    </div>`;
+}
+
+// การ์ดย่อย (chip) 1 ใบ ต่อ 1 วิชา/ห้อง แสดงเฉพาะภาคเรียนที่ระบุ ให้กระชับพอวางเรียงกันเป็นแถวเดียวได้
+function progressChipHtml(p, componentsKey, colorMap) {
+  const components = p[componentsKey];
+  if (!components || components.length === 0) return "";
+  const color = colorMap[String(p.subjectId)];
+
+  const bars = components
+    .map((c) => {
+      const label = c.componentType === "ปลายภาค" ? "สอบปลายภาค" : c.componentName;
+      return miniProgressBarHtml(label, c.percent, color);
+    })
+    .join("");
+
+  return `
+    <div class="rounded-lg border ${color.border} ${color.bg} p-2 w-full sm:w-[calc(50%-0.375rem)] lg:w-[calc(33.333%-0.5rem)]">
+      <div class="flex items-center justify-between gap-2 mb-1.5">
+        <span class="text-xs font-semibold ${color.text} truncate" title="${p.label}">${p.label}</span>
+        ${
+          p.isSubmitted
+            ? '<i class="fa-solid fa-circle-check text-green-600 text-xs" title="ส่งผลการเรียนแล้ว"></i>'
+            : '<i class="fa-regular fa-circle text-gray-300 text-xs" title="ยังไม่ส่งผลการเรียน"></i>'
+        }
+      </div>
+      <div class="space-y-1">${bars}</div>
+    </div>`;
+}
+
+// แถวความคืบหน้า 1 ภาคเรียน = 1 แถว รวมทุกวิชา/ห้องที่สอน (ต่างวิชา = ต่างสี)
+function semesterProgressRowHtml(semesterLabel, progress, componentsKey, colorMap) {
+  const chips = progress.map((p) => progressChipHtml(p, componentsKey, colorMap)).join("");
+  if (!chips.trim()) {
+    return `
+      <div class="flex items-center gap-3">
+        <span class="text-xs font-semibold text-gray-400 whitespace-nowrap w-20">${semesterLabel}</span>
+        <span class="text-xs text-gray-400">ยังไม่ได้ตั้งค่าช่องเก็บคะแนนของภาคเรียนนี้</span>
+      </div>`;
+  }
+  return `
+    <div class="flex flex-col sm:flex-row sm:items-start gap-2">
+      <span class="text-xs font-semibold text-gray-400 whitespace-nowrap w-20 sm:pt-2">${semesterLabel}</span>
+      <div class="flex flex-wrap gap-2 flex-1">${chips}</div>
+    </div>`;
+}
+
 function renderDashboard(role, data) {
   const container = document.getElementById("dashboard-content");
 
@@ -53,40 +134,7 @@ function renderDashboard(role, data) {
     )
     .join("");
 
-  const semesterComponentsHtml = (semesterLabel, components) => {
-    if (!components || components.length === 0) return "";
-    const bars = components
-      .map((c) => {
-        const label = c.componentType === "ปลายภาค" ? "คะแนนสอบ" + (c.componentName ? " (" + c.componentName + ")" : "") : c.componentName;
-        return progressBarHtml(label, c.percent);
-      })
-      .join("");
-    return `
-      <div>
-        <p class="text-xs font-medium text-gray-400 mb-2">${semesterLabel}</p>
-        <div class="space-y-2">${bars}</div>
-      </div>`;
-  };
-
-  const progressHtml = data.progress
-    .map(
-      (p) => `
-    <div class="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-medium text-wsecondary">${p.label}</span>
-        ${
-          p.isSubmitted
-            ? '<span class="text-xs text-green-600 font-medium whitespace-nowrap"><i class="fa-solid fa-circle-check mr-1"></i>ส่งผลการเรียนแล้ว</span>'
-            : '<span class="text-xs text-gray-400 whitespace-nowrap">ยังไม่ส่งผลการเรียน</span>'
-        }
-      </div>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        ${semesterComponentsHtml("ภาคเรียนที่ 1", p.semester1Components)}
-        ${semesterComponentsHtml("ภาคเรียนที่ 2", p.semester2Components)}
-      </div>
-    </div>`
-    )
-    .join("");
+  const subjectColorMap = buildSubjectColorMap(data.progress);
 
   const progressSectionHtml =
     data.progress.length === 0
@@ -96,8 +144,9 @@ function renderDashboard(role, data) {
       <h2 class="text-sm font-semibold text-wsecondary mb-4">
         <i class="fa-solid fa-chart-simple mr-1.5 text-wprimary"></i>ความคืบหน้าการกรอกคะแนน
       </h2>
-      <div class="space-y-4">
-        ${progressHtml}
+      <div class="space-y-3">
+        ${semesterProgressRowHtml("ภาคเรียนที่ 1", data.progress, "semester1Components", subjectColorMap)}
+        ${semesterProgressRowHtml("ภาคเรียนที่ 2", data.progress, "semester2Components", subjectColorMap)}
       </div>
     </div>`;
 
