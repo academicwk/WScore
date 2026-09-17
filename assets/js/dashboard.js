@@ -64,15 +64,15 @@ function buildSubjectColorMap(progress) {
 function miniProgressBarHtml(label, percent, color) {
   return `
     <div class="flex items-center gap-1.5">
-      <span class="text-[10px] text-gray-500 w-14 truncate" title="${label}">${label}</span>
+      <span class="text-[11px] text-gray-500 whitespace-nowrap">${label}</span>
       <div class="flex-1 bg-gray-100 rounded-full h-1.5">
         <div class="${color.bar} h-1.5 rounded-full" style="width:${percent}%"></div>
       </div>
-      <span class="text-[10px] text-gray-500 w-8 text-right">${percent}%</span>
+      <span class="text-[11px] text-gray-500 w-8 text-right shrink-0">${percent}%</span>
     </div>`;
 }
 
-// การ์ดย่อย (chip) 1 ใบ ต่อ 1 วิชา/ห้อง แสดงเฉพาะภาคเรียนที่ระบุ ให้กระชับพอวางเรียงกันเป็นแถวเดียวได้
+// การ์ดย่อย (chip) 1 ใบ ต่อ 1 วิชา/ห้อง แสดงเฉพาะภาคเรียนที่ระบุ
 function progressChipHtml(p, componentsKey, colorMap) {
   const components = p[componentsKey];
   if (!components || components.length === 0) return "";
@@ -85,34 +85,31 @@ function progressChipHtml(p, componentsKey, colorMap) {
     })
     .join("");
 
+  const submitStatusHtml = p.isSubmitted
+    ? '<span class="text-[11px] text-green-600 font-medium whitespace-nowrap"><i class="fa-solid fa-circle-check mr-1"></i>ส่งผลการเรียนแล้ว</span>'
+    : '<span class="text-[11px] text-gray-400 whitespace-nowrap"><i class="fa-regular fa-circle mr-1"></i>ยังไม่ส่งผลการเรียน</span>';
+
   return `
-    <div class="rounded-lg border ${color.border} ${color.bg} p-2 w-full sm:w-[calc(50%-0.375rem)] lg:w-[calc(33.333%-0.5rem)]">
-      <div class="flex items-center justify-between gap-2 mb-1.5">
-        <span class="text-xs font-semibold ${color.text} truncate" title="${p.label}">${p.label}</span>
-        ${
-          p.isSubmitted
-            ? '<i class="fa-solid fa-circle-check text-green-600 text-xs" title="ส่งผลการเรียนแล้ว"></i>'
-            : '<i class="fa-regular fa-circle text-gray-300 text-xs" title="ยังไม่ส่งผลการเรียน"></i>'
-        }
+    <div class="rounded-lg border ${color.border} ${color.bg} p-2.5 w-full">
+      <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1.5">
+        <span class="text-xs font-semibold ${color.text}">${p.label}</span>
+        ${submitStatusHtml}
       </div>
       <div class="space-y-1">${bars}</div>
     </div>`;
 }
 
-// แถวความคืบหน้า 1 ภาคเรียน = 1 แถว รวมทุกวิชา/ห้องที่สอน (ต่างวิชา = ต่างสี)
-function semesterProgressRowHtml(semesterLabel, progress, componentsKey, colorMap) {
+// คอลัมน์ความคืบหน้า 1 ภาคเรียน รวมทุกวิชา/ห้องที่สอน (ต่างวิชา = ต่างสี) วางซ้าย-ขวาคู่กับอีกภาคเรียน
+function semesterProgressColumnHtml(semesterLabel, progress, componentsKey, colorMap) {
   const chips = progress.map((p) => progressChipHtml(p, componentsKey, colorMap)).join("");
-  if (!chips.trim()) {
-    return `
-      <div class="flex items-center gap-3">
-        <span class="text-xs font-semibold text-gray-400 whitespace-nowrap w-20">${semesterLabel}</span>
-        <span class="text-xs text-gray-400">ยังไม่ได้ตั้งค่าช่องเก็บคะแนนของภาคเรียนนี้</span>
-      </div>`;
-  }
+  const bodyHtml = chips.trim()
+    ? `<div class="flex flex-col gap-2">${chips}</div>`
+    : `<div class="text-xs text-gray-400">ยังไม่ได้ตั้งค่าช่องเก็บคะแนนของภาคเรียนนี้</div>`;
+
   return `
-    <div class="flex flex-col sm:flex-row sm:items-start gap-2">
-      <span class="text-xs font-semibold text-gray-400 whitespace-nowrap w-20 sm:pt-2">${semesterLabel}</span>
-      <div class="flex flex-wrap gap-2 flex-1">${chips}</div>
+    <div>
+      <p class="text-xs font-semibold text-gray-400 mb-2">${semesterLabel}</p>
+      ${bodyHtml}
     </div>`;
 }
 
@@ -144,9 +141,9 @@ function renderDashboard(role, data) {
       <h2 class="text-sm font-semibold text-wsecondary mb-4">
         <i class="fa-solid fa-chart-simple mr-1.5 text-wprimary"></i>ความคืบหน้าการกรอกคะแนน
       </h2>
-      <div class="space-y-3">
-        ${semesterProgressRowHtml("ภาคเรียนที่ 1", data.progress, "semester1Components", subjectColorMap)}
-        ${semesterProgressRowHtml("ภาคเรียนที่ 2", data.progress, "semester2Components", subjectColorMap)}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        ${semesterProgressColumnHtml("ภาคเรียนที่ 1", data.progress, "semester1Components", subjectColorMap)}
+        ${semesterProgressColumnHtml("ภาคเรียนที่ 2", data.progress, "semester2Components", subjectColorMap)}
       </div>
     </div>`;
 
