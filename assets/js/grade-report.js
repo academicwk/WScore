@@ -85,7 +85,7 @@ function clearReport() {
     </div>`;
 }
 
-function showReportReady() {
+async function showReportReady() {
   const yearId = document.getElementById("yearFilter").value;
   const subjectId = document.getElementById("subjectFilter").value;
   const classId = document.getElementById("classFilter").value;
@@ -109,6 +109,39 @@ function showReportReady() {
   };
 
   document.getElementById("reportContent").innerHTML = `
+    <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังตรวจสอบสถานะ...</div>`;
+
+  const result = await callApi("getFinalizePageData", {
+    subjectId,
+    academicYearId: yearId,
+    classId,
+  });
+
+  const isSubmitted = result.status === "success" && !!result.data.isSubmitted;
+  renderReportPanel(isSubmitted);
+}
+
+function renderReportPanel(isSubmitted) {
+  if (!selectedInfo) return;
+
+  const actionHtml = isSubmitted
+    ? `<button onclick="generateReport()" id="generateReportBtn"
+        class="px-5 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg whitespace-nowrap">
+        <i class="fa-solid fa-file-pdf mr-1.5"></i>สร้างรายงาน ปถ.05 (PDF)
+      </button>`
+    : `<button disabled
+        class="px-5 py-2.5 text-sm font-medium text-gray-400 bg-gray-200 rounded-lg whitespace-nowrap cursor-not-allowed">
+        <i class="fa-solid fa-lock mr-1.5"></i>สร้างรายงาน ปถ.05 (PDF)
+      </button>`;
+
+  const noticeHtml = isSubmitted
+    ? ""
+    : `<div class="mt-3 text-xs text-amber-600">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+        ต้อง "ส่งผลการเรียน" ในเมนู "ตัดสินผลการเรียน" ของวิชา/ห้องนี้ก่อน จึงจะออกรายงานได้
+      </div>`;
+
+  document.getElementById("reportContent").innerHTML = `
     <div class="bg-white rounded-xl shadow p-6">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div class="text-sm text-gray-600">
@@ -116,11 +149,9 @@ function showReportReady() {
           <div><span class="text-gray-400">รายวิชา:</span> <span class="font-medium text-gray-700">${selectedInfo.subjectText}</span></div>
           <div><span class="text-gray-400">ห้องเรียน:</span> <span class="font-medium text-gray-700">${selectedInfo.classText}</span></div>
         </div>
-        <button onclick="generateReport()" id="generateReportBtn"
-          class="px-5 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg whitespace-nowrap">
-          <i class="fa-solid fa-file-pdf mr-1.5"></i>สร้างรายงาน ปถ.05 (PDF)
-        </button>
+        ${actionHtml}
       </div>
+      ${noticeHtml}
     </div>`;
 }
 
