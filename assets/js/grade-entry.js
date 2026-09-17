@@ -12,6 +12,7 @@ let currentComponents = []; // หน่วย + ปลายภาค (จา�
 let currentStudents = [];
 let currentScores = {}; // key: studentId|componentId|subComponentId -> score
 let activeComponentId = null; // หน่วย/ปลายภาคที่กำลังแสดงอยู่ (แบบแท็บ)
+let isEntryLocked = false; // true เมื่อวิชา/ห้องนี้ "ส่งผลการเรียน" ไปแล้ว ห้ามแก้ไขคะแนนต่อ
 
 document.addEventListener("DOMContentLoaded", async function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
@@ -117,6 +118,7 @@ async function loadEntryIfReady() {
 
   currentComponents = result.data.components;
   currentStudents = result.data.students;
+  isEntryLocked = !!result.data.isSubmitted;
 
   currentScores = {};
   (result.data.scores || []).forEach((sc) => {
@@ -304,8 +306,10 @@ function renderEntryTable() {
                  data-si="${si}" data-ci="${ci}"
                  data-student-id="${st.studentId}" data-component-id="${c.componentId}" data-sub-component-id="${c.subComponentId}"
                  value="${val === undefined ? "" : val}"
-                 oninput="onScoreInput(this)"
-                 class="score-input w-16 text-center border border-gray-300 rounded-lg px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+                 oninput="onScoreInput(this)" ${isEntryLocked ? "disabled" : ""}
+                 class="score-input w-16 text-center border border-gray-300 rounded-lg px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30 ${
+                   isEntryLocked ? "opacity-60 cursor-not-allowed" : ""
+                 }">
         </td>`;
         })
         .join("");
@@ -346,8 +350,31 @@ function renderEntryTable() {
     })
     .join("");
 
+  const lockNoticeHtml = isEntryLocked
+    ? `<div class="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-4 py-2.5">
+        <i class="fa-solid fa-lock mr-1"></i>
+        วิชา/ห้องนี้ "ส่งผลการเรียน" ไปแล้ว จึงล็อกไม่ให้แก้ไขคะแนน หากต้องการแก้ไข กรุณา "ถอนผลการเรียน" ในเมนูตัดสินผลการเรียนก่อน
+      </div>`
+    : "";
+
+  const footerHtml = isEntryLocked
+    ? `<div class="flex items-center justify-end gap-3 p-4 border-t border-gray-100">
+        <button disabled
+                class="px-5 py-2.5 text-sm font-medium text-gray-400 bg-gray-200 rounded-lg cursor-not-allowed">
+          <i class="fa-solid fa-lock mr-1.5"></i>บันทึกคะแนนทั้งหมด
+        </button>
+      </div>`
+    : `<div class="flex items-center justify-end gap-3 p-4 border-t border-gray-100">
+        <span id="saveStatus" class="text-xs text-gray-500"></span>
+        <button onclick="saveAllScores()" id="saveScoresBtn"
+                class="px-5 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">
+          <i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกคะแนนทั้งหมด
+        </button>
+      </div>`;
+
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow overflow-hidden">
+      ${lockNoticeHtml}
       <div class="flex overflow-x-auto border-b border-gray-100">
         ${renderTabs()}
       </div>
@@ -363,13 +390,7 @@ function renderEntryTable() {
           <tbody>${bodyHtml}</tbody>
         </table>
       </div>
-      <div class="flex items-center justify-end gap-3 p-4 border-t border-gray-100">
-        <span id="saveStatus" class="text-xs text-gray-500"></span>
-        <button onclick="saveAllScores()" id="saveScoresBtn"
-                class="px-5 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">
-          <i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกคะแนนทั้งหมด
-        </button>
-      </div>
+      ${footerHtml}
     </div>`;
 
   document.getElementById("scoreTable").addEventListener("paste", handleGridPaste);
