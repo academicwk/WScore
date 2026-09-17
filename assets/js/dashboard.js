@@ -26,6 +26,18 @@ async function fetchDashboardData(role, userId) {
   return result.data;
 }
 
+function progressBarHtml(label, percent) {
+  return `
+    <div>
+      <div class="flex items-center justify-between text-xs text-gray-500 mb-1">
+        <span>${label}</span><span>${percent}%</span>
+      </div>
+      <div class="w-full bg-gray-100 rounded-full h-2">
+        <div class="bg-wprimary h-2 rounded-full" style="width:${percent}%"></div>
+      </div>
+    </div>`;
+}
+
 function renderDashboard(role, data) {
   const container = document.getElementById("dashboard-content");
 
@@ -44,13 +56,33 @@ function renderDashboard(role, data) {
     )
     .join("");
 
-    const progressSectionHtml =
+  const progressHtml = data.progress
+    .map(
+      (p) => `
+    <div class="border-b border-gray-100 pb-4 last:border-0 last:pb-0">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-medium text-wsecondary">${p.label}</span>
+        ${
+          p.isSubmitted
+            ? '<span class="text-xs text-green-600 font-medium whitespace-nowrap"><i class="fa-solid fa-circle-check mr-1"></i>ส่งผลการเรียนแล้ว</span>'
+            : '<span class="text-xs text-gray-400 whitespace-nowrap">ยังไม่ส่งผลการเรียน</span>'
+        }
+      </div>
+      <div class="space-y-2">
+        ${progressBarHtml("ภาคเรียนที่ 1", p.semester1Percent)}
+        ${progressBarHtml("ภาคเรียนที่ 2", p.semester2Percent)}
+      </div>
+    </div>`
+    )
+    .join("");
+
+  const progressSectionHtml =
     data.progress.length === 0
       ? ""
       : `
     <div class="bg-white rounded-xl shadow p-5 mb-6">
       <h2 class="text-sm font-semibold text-wsecondary mb-4">
-        <i class="fa-solid fa-chart-simple mr-1.5 text-wprimary"></i>ความคืบหน้า
+        <i class="fa-solid fa-chart-simple mr-1.5 text-wprimary"></i>ความคืบหน้าการกรอกคะแนน
       </h2>
       <div class="space-y-4">
         ${progressHtml}
@@ -69,6 +101,19 @@ function renderDashboard(role, data) {
     )
     .join("");
 
+  const actionsSectionHtml =
+    data.quickActions.length === 0
+      ? ""
+      : `
+    <div>
+      <h2 class="text-sm font-semibold text-wsecondary mb-3">
+        <i class="fa-solid fa-bolt mr-1.5 text-wprimary"></i>เมนูลัด
+      </h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        ${actionsHtml}
+      </div>
+    </div>`;
+
   container.innerHTML = `
     <!-- ส่วนที่ 1 : Summary Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-${data.cards.length} gap-4 mb-6">
@@ -79,13 +124,6 @@ function renderDashboard(role, data) {
     ${progressSectionHtml}
 
     <!-- ส่วนที่ 3 : Quick Actions -->
-    <div>
-      <h2 class="text-sm font-semibold text-wsecondary mb-3">
-        <i class="fa-solid fa-bolt mr-1.5 text-wprimary"></i>เมนูลัด
-      </h2>
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        ${actionsHtml}
-      </div>
-    </div>
+    ${actionsSectionHtml}
   `;
 }
