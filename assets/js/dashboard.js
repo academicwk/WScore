@@ -1,9 +1,6 @@
 /**
  * W-Score : Main Dashboard Content
  * แสดงผล Summary Cards / Progress & Charts / Quick Actions ตาม Role ปัจจุบัน
- *
- * TODO: ตอนนี้ใช้ MOCK_DATA ชั่วคราว ขั้นตอนถัดไปจะแก้ให้ดึงจาก
- * Google Apps Script API จริง (แทนที่เฉพาะฟังก์ชัน fetchDashboardData)
  */
 
 document.addEventListener("DOMContentLoaded", function () {
@@ -56,6 +53,21 @@ function renderDashboard(role, data) {
     )
     .join("");
 
+  const semesterComponentsHtml = (semesterLabel, components) => {
+    if (!components || components.length === 0) return "";
+    const bars = components
+      .map((c) => {
+        const label = c.componentType === "ปลายภาค" ? "คะแนนสอบ" + (c.componentName ? " (" + c.componentName + ")" : "") : c.componentName;
+        return progressBarHtml(label, c.percent);
+      })
+      .join("");
+    return `
+      <div>
+        <p class="text-xs font-medium text-gray-400 mb-2">${semesterLabel}</p>
+        <div class="space-y-2">${bars}</div>
+      </div>`;
+  };
+
   const progressHtml = data.progress
     .map(
       (p) => `
@@ -68,9 +80,9 @@ function renderDashboard(role, data) {
             : '<span class="text-xs text-gray-400 whitespace-nowrap">ยังไม่ส่งผลการเรียน</span>'
         }
       </div>
-      <div class="space-y-2">
-        ${progressBarHtml("ภาคเรียนที่ 1", p.semester1Percent)}
-        ${progressBarHtml("ภาคเรียนที่ 2", p.semester2Percent)}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        ${semesterComponentsHtml("ภาคเรียนที่ 1", p.semester1Components)}
+        ${semesterComponentsHtml("ภาคเรียนที่ 2", p.semester2Components)}
       </div>
     </div>`
     )
