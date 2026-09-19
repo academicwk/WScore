@@ -8,7 +8,8 @@
 let allYears = [];
 let myAssignments = [];
 let currentResults = [];
-let isSubmitted = false;
+let isSubmittedSem1 = false;
+let isSubmittedSem2 = false;
 
 document.addEventListener("DOMContentLoaded", async function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
