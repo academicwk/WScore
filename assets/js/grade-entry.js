@@ -160,10 +160,6 @@ function getInputColumns(componentId) {
   return cols;
 }
 
-function totalMaxScore() {
-  return currentComponents.reduce((sum, comp) => sum + Number(comp.maxScore || 0), 0);
-}
-
 // คำนวณคะแนนหน่วย (เต็ม 10) จากค่าเฉลี่ยของช่องย่อยในหน่วยนั้น สำหรับนักเรียน 1 คน
 function computeUnitScore(comp, studentId) {
   if (!comp.subComponents || comp.subComponents.length === 0) return 0;
@@ -177,12 +173,6 @@ function computeUnitScore(comp, studentId) {
 
   const avgRatio = ratios.reduce((a, b) => a + b, 0) / ratios.length;
   return avgRatio * Number(comp.maxScore || 10);
-}
-
-function computeRowTotal(studentId) {
-  const raw = computeCombinedRaw(studentId);
-  const max = totalMaxScore();
-  return max > 0 ? (raw / max) * 100 : 0;
 }
 
 // คะแนนดิบรวมของหน่วย (ผลรวมคะแนนดิบจากทุกช่องในหน่วยนั้น) แสดงเป็น "ได้/เต็ม"
@@ -213,17 +203,33 @@ function computeAllUnitsScore(studentId) {
   return sum;
 }
 
-// คะแนนระหว่างภาค (ผลรวมคะแนนหน่วยที่คิดเฉลี่ยแล้วทุกหน่วย + คะแนนปลายภาคดิบ) ก่อนนำไปคิดเป็นฐาน 100
-function computeCombinedRaw(studentId) {
-  let raw = 0;
-  currentComponents.forEach((comp) => {
-    if (comp.componentType === "ปลายภาค") {
-      raw += Number(currentScores[scoreKey(studentId, comp.componentId, "")]) || 0;
-    } else {
-      raw += computeUnitScore(comp, studentId);
-    }
-  });
-  return raw;
+// แปลง (scale) คะแนนจริงของหน่วยทั้งหมดให้เป็นฐาน 70 เสมอ ไม่ว่าคะแนนเต็มรวมของหน่วยจะตั้งไว้เท่าไหร่ก็ตาม
+// (เช่น ตั้ง 4 หน่วยเต็มหน่วยละ 10 รวมเป็น 40 -> ยังคงถูกแปลงสัดส่วนให้เต็ม 70 เสมอ)
+function computeScaledUnitsScore70(studentId) {
+  const max = unitsMaxScore();
+  if (max === 0) return 0;
+  return (computeAllUnitsScore(studentId) / max) * 70;
+}
+
+// หา component ประเภท "ปลายภาค" ที่กำลังเปิดอยู่ (ใช้เอาคะแนนเต็มจริงมาคำนวณสัดส่วน)
+function getFinalExamComponent() {
+  return currentComponents.find((c) => c.componentType === "ปลายภาค");
+}
+
+// แปลงคะแนนสอบปลายภาคจริงให้เป็นฐาน 30 เสมอ ไม่ว่าคะแนนเต็มปลายภาคจะตั้งไว้เท่าไหร่ก็ตาม
+function computeScaledExamScore30(studentId) {
+  const examComp = getFinalExamComponent();
+  if (!examComp) return 0;
+  const raw = Number(currentScores[scoreKey(studentId, examComp.componentId, "")]) || 0;
+  const max = Number(examComp.maxScore) || 0;
+  if (max === 0) return 0;
+  return (raw / max) * 30;
+}
+
+// คะแนนสรุปภาคเรียน (เต็ม 100 เสมอ) = คะแนนระหว่างภาคที่แปลงเป็นฐาน 70 + คะแนนปลายภาคที่แปลงเป็นฐาน 30
+// (สอดคล้องกับสูตรฝั่ง Server ใน computeSemesterScores() ของ Code.gs)
+function computeRowTotal(studentId) {
+  return computeScaledUnitsScore70(studentId) + computeScaledExamScore30(studentId);
 }
 
 // สีพื้นหลังของช่องกรอกคะแนน: ยังไม่กรอก = เหลืองอ่อน, กรอกแล้วต่ำกว่า 6 = แดงอ่อน, กรอกแล้ว 6 ขึ้นไป = เขียวอ่อน
@@ -287,8 +293,9 @@ function renderEntryTable() {
 
   const headHtml = isFinalTab
     ? `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนจริงทุกหน่วย<br><span class="text-gray-400 font-normal">(เต็ม ${unitsMaxScore()})</span></th>` +
+      `<th class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">คะแนนระหว่างภาคเรียนที่ ${semesterValue}<br><span class="text-gray-400 font-normal">(เต็ม 70)</span></th>` +
       inputColsHeadHtml +
-      `<th class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">คะแนนภาคเรียนที่ ${semesterValue}<br><span class="text-gray-400 font-normal">(เต็ม ${totalMaxScore()})</span></th>`
+      `<th class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">คะแนนสรุปภาคเรียนที่ ${semesterValue}<br><span class="text-gray-400 font-normal">(เต็ม 100)</span></th>`
     : inputColsHeadHtml +
       (showUnitSummaryCols
         ? `<th class="px-2 py-2 text-center whitespace-nowrap font-medium border-l-2 border-b-2 border-gray-400">คะแนนดิบรวม</th>
@@ -328,6 +335,9 @@ function renderEntryTable() {
         ? `
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-allunitsscore-for="${st.studentId}">
         ${computeAllUnitsScore(st.studentId).toFixed(2)}
+      </td>
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-scaledunits70-for="${st.studentId}">
+        ${computeScaledUnitsScore70(st.studentId).toFixed(2)}
       </td>`
         : "";
 
@@ -439,9 +449,12 @@ function onScoreInput(input) {
   }
 
   if (activeComp && activeComp.componentType === "ปลายภาค") {
-    // แท็บปลายภาค: อัปเดตคะแนนจริงทุกหน่วย + คะแนนภาคเรียน
+    // แท็บปลายภาค: อัปเดตคะแนนจริงทุกหน่วย + คะแนนระหว่างภาค (70) + คะแนนสรุปภาคเรียน (100)
     const allUnitsScoreCell = document.querySelector(`[data-allunitsscore-for="${studentId}"]`);
     if (allUnitsScoreCell) allUnitsScoreCell.textContent = computeAllUnitsScore(studentId).toFixed(2);
+
+    const scaledUnitsCell = document.querySelector(`[data-scaledunits70-for="${studentId}"]`);
+    if (scaledUnitsCell) scaledUnitsCell.textContent = computeScaledUnitsScore70(studentId).toFixed(2);
 
     const totalCell = document.querySelector(`[data-total-for="${studentId}"]`);
     if (totalCell) totalCell.textContent = computeRowTotal(studentId).toFixed(2);
