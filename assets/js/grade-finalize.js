@@ -110,7 +110,8 @@ async function loadFinalizeIfReady() {
   }
 
   currentResults = result.data.students;
-  isSubmitted = result.data.isSubmitted;
+  isSubmittedSem1 = result.data.isSubmittedSem1;
+  isSubmittedSem2 = result.data.isSubmittedSem2;
 
   renderFinalizeTable();
 }
@@ -149,15 +150,39 @@ function renderFinalizeTable() {
     )
     .join("");
 
-  const buttonHtml = isSubmitted
-    ? `<button onclick="withdrawFinalResults()" id="finalizeActionBtn"
-        class="px-5 py-2.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg">
-        <i class="fa-solid fa-rotate-left mr-1.5"></i>ดึงผลการเรียนกลับ
-      </button>`
-    : `<button onclick="submitFinalResults()" id="finalizeActionBtn"
-        class="px-5 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">
-        <i class="fa-solid fa-paper-plane mr-1.5"></i>ส่งผลการเรียน
-      </button>`;
+  const semesterActionHtml = (semester, submitted) => {
+    const btn = submitted
+      ? `<button onclick="withdrawFinalResults(${semester})" id="finalizeActionBtnSem${semester}"
+          class="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg whitespace-nowrap">
+          <i class="fa-solid fa-rotate-left mr-1.5"></i>ดึงผลกลับ
+        </button>`
+      : `<button onclick="submitFinalResults(${semester})" id="finalizeActionBtnSem${semester}"
+          class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg whitespace-nowrap">
+          <i class="fa-solid fa-paper-plane mr-1.5"></i>ส่งผลการเรียน
+        </button>`;
+
+    const statusHtml = submitted
+      ? '<span class="text-xs text-green-600 font-medium"><i class="fa-solid fa-circle-check mr-1"></i>ส่งผลการเรียนแล้ว</span>'
+      : '<span class="text-xs text-gray-400">ยังไม่ส่งผลการเรียน</span>';
+
+    return `
+      <div class="flex items-center justify-between gap-3 bg-gray-50 rounded-lg p-3">
+        <div>
+          <p class="text-xs font-semibold text-gray-500 mb-1">ภาคเรียนที่ ${semester}</p>
+          ${statusHtml}
+        </div>
+        <span id="finalizeStatusSem${semester}"></span>
+        ${btn}
+      </div>`;
+  };
+
+  const bothSubmitted = isSubmittedSem1 && isSubmittedSem2;
+  const yearNoticeHtml = bothSubmitted
+    ? ""
+    : `<div class="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-4 py-2.5">
+        <i class="fa-solid fa-triangle-exclamation mr-1"></i>
+        คะแนนปีการศึกษาและผลการเรียน (0-4) ที่แสดงในตารางเป็นค่าคำนวณล่วงหน้าเท่านั้น จะถูกบันทึกเป็นผลอย่างเป็นทางการ (ใช้ออกรายงาน ปถ.05) ก็ต่อเมื่อส่งผลการเรียนครบทั้ง 2 ภาคเรียนแล้ว
+      </div>`;
 
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow overflow-hidden">
@@ -184,17 +209,17 @@ function renderFinalizeTable() {
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
-      <div class="flex items-center justify-end gap-3 p-4 border-t border-gray-100">
-        <span id="finalizeStatus" class="text-xs text-gray-500">${isSubmitted ? '<i class="fa-solid fa-circle-check text-green-600 mr-1"></i>ส่งผลการเรียนแล้ว' : ""}</span>
-        ${buttonHtml}
+      ${yearNoticeHtml}
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 border-t border-gray-100">
+        ${semesterActionHtml(1, isSubmittedSem1)}
+        ${semesterActionHtml(2, isSubmittedSem2)}
       </div>
     </div>`;
 }
-
-async function submitFinalResults() {
+async function submitFinalResults(semester) {
   const confirmResult = await Swal.fire({
     icon: "question",
-    title: "ยืนยันการส่งผลการเรียน",
+    title: `ยืนยันการส่งผลการเรียน ภาคเรียนที่ ${semester}`,
     text: "ระบบจะบันทึกผลการเรียนของนักเรียนทุกคนในห้องนี้ลงฐานข้อมูล ต้องการดำเนินการต่อหรือไม่",
     showCancelButton: true,
     confirmButtonText: "ส่งผลการเรียน",
@@ -204,14 +229,14 @@ async function submitFinalResults() {
 
   if (!confirmResult.isConfirmed) return;
 
-  await runFinalizeAction("submitFinalResults", "กำลังส่งผลการเรียน...", "ส่งผลการเรียนสำเร็จ");
+  await runFinalizeAction("submitFinalResults", semester, "กำลังส่งผลการเรียน...", "ส่งผลการเรียนสำเร็จ");
 }
 
-async function withdrawFinalResults() {
+async function withdrawFinalResults(semester) {
   const confirmResult = await Swal.fire({
     icon: "warning",
-    title: "ยืนยันการดึงผลการเรียนกลับ",
-    text: "ผลการเรียนที่บันทึกไว้ของนักเรียนทุกคนในห้องนี้จะถูกลบออกจากฐานข้อมูล ต้องการดำเนินการต่อหรือไม่",
+    title: `ยืนยันการดึงผลการเรียนกลับ ภาคเรียนที่ ${semester}`,
+    text: "ผลการเรียนที่บันทึกไว้ของภาคเรียนนี้จะถูกลบออกจากฐานข้อมูล ต้องการดำเนินการต่อหรือไม่",
     showCancelButton: true,
     confirmButtonText: "ดึงผลการเรียนกลับ",
     cancelButtonText: "ยกเลิก",
@@ -220,16 +245,16 @@ async function withdrawFinalResults() {
 
   if (!confirmResult.isConfirmed) return;
 
-  await runFinalizeAction("withdrawFinalResults", "กำลังดึงผลการเรียนกลับ...", "ดึงผลการเรียนกลับสำเร็จ");
+  await runFinalizeAction("withdrawFinalResults", semester, "กำลังดึงผลการเรียนกลับ...", "ดึงผลการเรียนกลับสำเร็จ");
 }
 
-async function runFinalizeAction(action, loadingText, successText) {
+async function runFinalizeAction(action, semester, loadingText, successText) {
   const yearId = document.getElementById("yearFilter").value;
   const subjectId = document.getElementById("subjectFilter").value;
   const classId = document.getElementById("classFilter").value;
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
 
-  const btn = document.getElementById("finalizeActionBtn");
+  const btn = document.getElementById(`finalizeActionBtnSem${semester}`);
   if (btn) {
     btn.disabled = true;
     btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> ${loadingText}`;
@@ -240,9 +265,10 @@ async function runFinalizeAction(action, loadingText, successText) {
       subjectId,
       academicYearId: yearId,
       classId,
+      semester,
       userId: userData ? userData.userId : "",
     });
-
+    
     if (result.status === "success") {
       Swal.fire({ icon: "success", title: successText, confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
       await loadFinalizeIfReady();
