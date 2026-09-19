@@ -117,14 +117,19 @@ async function showReportReady() {
     classId,
   });
 
-  const isSubmitted = result.status === "success" && !!result.data.isSubmitted;
-  renderReportPanel(isSubmitted);
+  // ออกรายงานได้ตั้งแต่ส่งผลการเรียนภาคเรียนที่ 1 แล้ว (ไม่ต้องรอครบทั้งปี) — เนื้อหารายงานจะแสดงเฉพาะภาคเรียนที่ 1
+  // จนกว่าจะส่งภาคเรียนที่ 2 ด้วย จึงจะได้รายงานฉบับเต็มทั้งปี
+  const isSubmittedSem1 = result.status === "success" && !!result.data.isSubmittedSem1;
+  const isSubmittedSem2 = result.status === "success" && !!result.data.isSubmittedSem2;
+  renderReportPanel(isSubmittedSem1, isSubmittedSem2);
 }
 
-function renderReportPanel(isSubmitted) {
+function renderReportPanel(isSubmittedSem1, isSubmittedSem2) {
   if (!selectedInfo) return;
 
-  const actionHtml = isSubmitted
+  const canGenerate = isSubmittedSem1;
+
+  const actionHtml = canGenerate
     ? `<button onclick="generateReport()" id="generateReportBtn"
         class="px-5 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg whitespace-nowrap">
         <i class="fa-solid fa-file-pdf mr-1.5"></i>สร้างรายงาน ปถ.05 (PDF)
@@ -134,12 +139,20 @@ function renderReportPanel(isSubmitted) {
         <i class="fa-solid fa-lock mr-1.5"></i>สร้างรายงาน ปถ.05 (PDF)
       </button>`;
 
-  const noticeHtml = isSubmitted
-    ? ""
-    : `<div class="mt-3 text-xs text-amber-600">
+  let noticeHtml;
+  if (!canGenerate) {
+    noticeHtml = `<div class="mt-3 text-xs text-amber-600">
         <i class="fa-solid fa-triangle-exclamation mr-1"></i>
-        ต้อง "ส่งผลการเรียน" ในเมนู "ตัดสินผลการเรียน" ของวิชา/ห้องนี้ก่อน จึงจะออกรายงานได้
+        ต้อง "ส่งผลการเรียน" อย่างน้อยภาคเรียนที่ 1 ในเมนู "ตัดสินผลการเรียน" ของวิชา/ห้องนี้ก่อน จึงจะออกรายงานได้
       </div>`;
+  } else if (!isSubmittedSem2) {
+    noticeHtml = `<div class="mt-3 text-xs text-blue-600">
+        <i class="fa-solid fa-circle-info mr-1"></i>
+        ยังไม่ได้ส่งผลการเรียนภาคเรียนที่ 2 รายงานที่สร้างจะแสดงเฉพาะข้อมูลภาคเรียนที่ 1 เท่านั้น (ส่วนที่เหลือจะเป็น "-")
+      </div>`;
+  } else {
+    noticeHtml = "";
+  }
 
   document.getElementById("reportContent").innerHTML = `
     <div class="bg-white rounded-xl shadow p-6">
