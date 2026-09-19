@@ -85,8 +85,9 @@ function progressChipHtml(p, componentsKey, colorMap) {
     })
     .join("");
 
-  const submitStatusHtml = p.isSubmitted
-    ? '<span class="text-[11px] text-green-600 font-medium whitespace-nowrap"><i class="fa-solid fa-circle-check mr-1"></i>ส่งผลการเรียนแล้ว</span>'
+  // สถานะการส่งผลการเรียนแยกอิสระตามภาคเรียนที่ chip นี้กำลังแสดง (ไม่ใช่รวมทั้งปี)
+  const isSubmitted = componentsKey === "semester1Components" ? p.isSubmittedSem1 : p.isSubmittedSem2;
+  const submitStatusHtml = isSubmitted    ? '<span class="text-[11px] text-green-600 font-medium whitespace-nowrap"><i class="fa-solid fa-circle-check mr-1"></i>ส่งผลการเรียนแล้ว</span>'
     : '<span class="text-[11px] text-gray-400 whitespace-nowrap"><i class="fa-regular fa-circle mr-1"></i>ยังไม่ส่งผลการเรียน</span>';
 
   return `
