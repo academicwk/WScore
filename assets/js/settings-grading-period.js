@@ -1,6 +1,7 @@
 /**
  * W-Score : ตั้งเวลาเปิด/ปิดการบันทึกคะแนน (สำหรับนายทะเบียน / ผู้ช่วยนายทะเบียน)
  * ตั้งแยกอิสระรายปีการศึกษา x ภาคเรียน เมื่อหมดเวลาที่กำหนด ครูประจำวิชาจะดูข้อมูลได้อย่างเดียวทันที
+ * มีปุ่ม "บังคับเปิด/บังคับปิด" แบบไม่กำหนดเวลา ซึ่งจะ override ทับช่วงเวลาที่ตั้งไว้เสมอ
  */
 
 let allYears = [];
@@ -56,11 +57,28 @@ function renderPeriodCards() {
     document.getElementById(`start${semester}`).value = toDatetimeLocalValue(period ? period.StartDateTime : "");
     document.getElementById(`end${semester}`).value = toDatetimeLocalValue(period ? period.EndDateTime : "");
     renderStatusBadge(semester, period);
+    renderManualButtons(semester, period);
   });
+}
+
+function getManualStatus(period) {
+  return period ? String(period.ManualStatus || "").trim().toUpperCase() : "";
 }
 
 function renderStatusBadge(semester, period) {
   const badge = document.getElementById(`status${semester}`);
+  const manualStatus = getManualStatus(period);
+
+  if (manualStatus === "OPEN") {
+    badge.className = "text-xs font-medium px-2.5 py-1 rounded-full bg-wprimary-light text-wprimary";
+    badge.textContent = "บังคับเปิดไม่จำกัดเวลา";
+    return;
+  }
+  if (manualStatus === "CLOSED") {
+    badge.className = "text-xs font-medium px-2.5 py-1 rounded-full bg-red-50 text-red-600";
+    badge.textContent = "บังคับปิดอยู่";
+    return;
+  }
 
   if (!period || !period.StartDateTime || !period.EndDateTime) {
     badge.className = "text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500";
@@ -79,6 +97,26 @@ function renderStatusBadge(semester, period) {
   badge.textContent = isOpen ? "กำลังเปิดให้บันทึกคะแนน" : now < start ? "ยังไม่ถึงเวลาเปิด" : "ปิดการบันทึกคะแนนแล้ว";
 }
 
+function renderManualButtons(semester, period) {
+  const manualStatus = getManualStatus(period);
+  const openBtn = document.getElementById(`manualOpenBtn${semester}`);
+  const closedBtn = document.getElementById(`manualClosedBtn${semester}`);
+  const clearBtn = document.getElementById(`manualClearBtn${semester}`);
+
+  [openBtn, closedBtn, clearBtn].forEach((btn) => btn.classList.remove("ring-2", "ring-offset-1"));
+
+  if (manualStatus === "OPEN") {
+    openBtn.classList.add("ring-2", "ring-offset-1");
+    openBtn.style.setProperty("--tw-ring-color", "#268244");
+  } else if (manualStatus === "CLOSED") {
+    closedBtn.classList.add("ring-2", "ring-offset-1");
+    closedBtn.style.setProperty("--tw-ring-color", "#dc2626");
+  } else {
+    clearBtn.classList.add("ring-2", "ring-offset-1");
+    clearBtn.style.setProperty("--tw-ring-color", "#9ca3af");
+  }
+}
+
 async function handleSubmitPeriod(e, semester) {
   e.preventDefault();
 
@@ -92,6 +130,38 @@ async function handleSubmitPeriod(e, semester) {
   }
 
   const result = await callApi("setGradingPeriod", { academicYearId, semester, startDateTime, endDateTime });
+
+  if (result.status === "success") {
+    Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+    await loadPageData();
+  } else {
+    Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+  }
+}
+
+async function handleSetManualStatus(semester, manualStatus) {
+  const academicYearId = document.getElementById("yearFilter").value;
+  if (!academicYearId) return;
+
+  const labels = {
+    OPEN: "บังคับเปิดไม่จำกัดเวลา",
+    CLOSED: "บังคับปิดทันที",
+    "": "เคลียร์กลับไปใช้ตามช่วงเวลาที่ตั้งไว้",
+  };
+
+  const confirmResult = await Swal.fire({
+    icon: "question",
+    title: "ยืนยันการเปลี่ยนสถานะ",
+    text: `ต้องการ "${labels[manualStatus]}" สำหรับภาคเรียนที่ ${semester} ใช่หรือไม่`,
+    showCancelButton: true,
+    confirmButtonText: "ยืนยัน",
+    cancelButtonText: "ยกเลิก",
+    confirmButtonColor: "#268244",
+  });
+
+  if (!confirmResult.isConfirmed) return;
+
+  const result = await callApi("setGradingPeriodManualStatus", { academicYearId, semester, manualStatus });
 
   if (result.status === "success") {
     Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
