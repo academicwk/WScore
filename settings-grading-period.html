@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>ตั้งเวลาบันทึกคะแนน - W-Score</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="assets/js/theme.config.js"></script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body class="font-sans bg-gray-50">
+
+  <div id="app-header"></div>
+  <div id="app-sidebar"></div>
+
+  <main class="pt-16 lg:pl-64 min-h-screen transition-all">
+    <div class="p-4 sm:p-6 max-w-3xl">
+
+      <div class="flex items-center justify-between mb-4">
+        <h1 class="text-lg font-bold text-wsecondary">
+          <i class="fa-solid fa-clock text-wprimary mr-2"></i>ตั้งเวลาบันทึกคะแนน
+        </h1>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">ปีการศึกษา</label>
+        <select id="yearFilter" class="w-full sm:w-64 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30"></select>
+      </div>
+
+      <div class="space-y-4">
+
+        <div class="bg-white rounded-xl shadow p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-bold text-wsecondary">ภาคเรียนที่ 1</h2>
+            <span id="status1" class="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">-</span>
+          </div>
+          <form id="periodForm1" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">วันเวลาเริ่มเปิดให้บันทึกคะแนน</label>
+              <input id="start1" type="datetime-local" required
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">วันเวลาปิดการบันทึกคะแนน</label>
+              <input id="end1" type="datetime-local" required
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div class="sm:col-span-2 flex justify-end">
+              <button type="submit"
+                      class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึก</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="bg-white rounded-xl shadow p-5">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-bold text-wsecondary">ภาคเรียนที่ 2</h2>
+            <span id="status2" class="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">-</span>
+          </div>
+          <form id="periodForm2" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">วันเวลาเริ่มเปิดให้บันทึกคะแนน</label>
+              <input id="start2" type="datetime-local" required
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-gray-600 mb-1">วันเวลาปิดการบันทึกคะแนน</label>
+              <input id="end2" type="datetime-local" required
+                     class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            </div>
+            <div class="sm:col-span-2 flex justify-end">
+              <button type="submit"
+                      class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึก</button>
+            </div>
+          </form>
+        </div>
+
+        <p class="text-xs text-gray-400">
+          <i class="fa-solid fa-circle-info mr-1"></i>
+          หากยังไม่ได้ตั้งค่าช่วงเวลาของภาคเรียนใด ระบบจะเปิดให้ครูบันทึกคะแนนได้ตลอดเวลา (ไม่ถูกล็อกจากฟีเจอร์นี้) เมื่อหมดเวลาที่กำหนด ครูผู้สอนจะดูข้อมูลคะแนนได้อย่างเดียว ไม่สามารถบันทึก/แก้ไขคะแนนต่อได้ทันที
+        </p>
+
+      </div>
+
+    </div>
+  </main>
+
+<script src="assets/js/api.config.js"></script>
+<script src="assets/js/menu.config.js"></script>
+<script src="assets/js/layout.js"></script>
+<script src="assets/js/settings-grading-period.js"></script>
+</body>
+</html>
