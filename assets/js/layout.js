@@ -231,8 +231,11 @@
       "border-wprimary/30", "bg-wprimary-light", "text-wprimary",
       "border-red-200", "bg-red-50", "text-red-600"
     );
-    // ตัวนับถอยหลังแสดงเป็นสีแดงเสมอ ทั้งตอนกำลังนับถอยหลัง (open) และตอนปิดไปแล้ว (closed)
-    el.classList.add("border-red-200", "bg-red-50", "text-red-600");
+    if (state === "open") {
+      el.classList.add("border-wprimary/30", "bg-wprimary-light", "text-wprimary");
+    } else {
+      el.classList.add("border-red-200", "bg-red-50", "text-red-600");
+    }
   }
 
   function formatCountdown(diffMs) {
@@ -241,6 +244,8 @@
     const m = Math.floor((diffMs % 3600000) / 60000);
     const s = Math.floor((diffMs % 60000) / 1000);
 
-    // แสดงครบทุกหน่วยเสมอ (วัน-ชม.-นาที-วินาที) นับถอยหลังแบบ real-time ถึงระดับวินาที
-    return `${d} วัน ${h} ชม. ${m} นาที ${s} วิ`;
+    if (d > 0) return `${d} วัน ${h} ชม.`;
+    if (h > 0) return `${h} ชม. ${m} นาที`;
+    return `${m} นาที ${s} วิ`;
   }
+})();
