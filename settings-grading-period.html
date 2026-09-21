@@ -43,6 +43,23 @@
             <h2 class="text-sm font-bold text-wsecondary">ภาคเรียนที่ 1</h2>
             <span id="status1" class="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">-</span>
           </div>
+
+          <div class="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-gray-100">
+            <span class="text-xs font-medium text-gray-600 mr-1">บังคับเปิด/ปิดแบบไม่กำหนดเวลา:</span>
+            <button type="button" onclick="handleSetManualStatus(1, 'OPEN')" id="manualOpenBtn1"
+                    class="px-3 py-1.5 text-xs font-medium rounded-lg border border-wprimary/40 text-wprimary hover:bg-wprimary-light transition">
+              <i class="fa-solid fa-lock-open mr-1"></i>บังคับเปิด
+            </button>
+            <button type="button" onclick="handleSetManualStatus(1, 'CLOSED')" id="manualClosedBtn1"
+                    class="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition">
+              <i class="fa-solid fa-lock mr-1"></i>บังคับปิด
+            </button>
+            <button type="button" onclick="handleSetManualStatus(1, '')" id="manualClearBtn1"
+                    class="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
+              <i class="fa-solid fa-rotate-left mr-1"></i>ใช้ตามช่วงเวลา
+            </button>
+          </div>
+
           <form id="periodForm1" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-medium text-gray-600 mb-1">วันเวลาเริ่มเปิดให้บันทึกคะแนน</label>
@@ -56,7 +73,7 @@
             </div>
             <div class="sm:col-span-2 flex justify-end">
               <button type="submit"
-                      class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึก</button>
+                      class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึกช่วงเวลา</button>
             </div>
           </form>
         </div>
@@ -66,6 +83,23 @@
             <h2 class="text-sm font-bold text-wsecondary">ภาคเรียนที่ 2</h2>
             <span id="status2" class="text-xs font-medium px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">-</span>
           </div>
+
+          <div class="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-gray-100">
+            <span class="text-xs font-medium text-gray-600 mr-1">บังคับเปิด/ปิดแบบไม่กำหนดเวลา:</span>
+            <button type="button" onclick="handleSetManualStatus(2, 'OPEN')" id="manualOpenBtn2"
+                    class="px-3 py-1.5 text-xs font-medium rounded-lg border border-wprimary/40 text-wprimary hover:bg-wprimary-light transition">
+              <i class="fa-solid fa-lock-open mr-1"></i>บังคับเปิด
+            </button>
+            <button type="button" onclick="handleSetManualStatus(2, 'CLOSED')" id="manualClosedBtn2"
+                    class="px-3 py-1.5 text-xs font-medium rounded-lg border border-red-300 text-red-600 hover:bg-red-50 transition">
+              <i class="fa-solid fa-lock mr-1"></i>บังคับปิด
+            </button>
+            <button type="button" onclick="handleSetManualStatus(2, '')" id="manualClearBtn2"
+                    class="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition">
+              <i class="fa-solid fa-rotate-left mr-1"></i>ใช้ตามช่วงเวลา
+            </button>
+          </div>
+
           <form id="periodForm2" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label class="block text-xs font-medium text-gray-600 mb-1">วันเวลาเริ่มเปิดให้บันทึกคะแนน</label>
@@ -79,14 +113,14 @@
             </div>
             <div class="sm:col-span-2 flex justify-end">
               <button type="submit"
-                      class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึก</button>
+                      class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึกช่วงเวลา</button>
             </div>
           </form>
         </div>
 
         <p class="text-xs text-gray-400">
           <i class="fa-solid fa-circle-info mr-1"></i>
-          หากยังไม่ได้ตั้งค่าช่วงเวลาของภาคเรียนใด ระบบจะเปิดให้ครูบันทึกคะแนนได้ตลอดเวลา (ไม่ถูกล็อกจากฟีเจอร์นี้) เมื่อหมดเวลาที่กำหนด ครูผู้สอนจะดูข้อมูลคะแนนได้อย่างเดียว ไม่สามารถบันทึก/แก้ไขคะแนนต่อได้ทันที
+          หากยังไม่ได้ตั้งค่าช่วงเวลาของภาคเรียนใด ระบบจะเปิดให้ครูบันทึกคะแนนได้ตลอดเวลา ปุ่ม "บังคับเปิด/บังคับปิด" จะมีผลเหนือกว่าช่วงเวลาที่ตั้งไว้เสมอ (ไม่จำกัดเวลา) ส่วนปุ่ม "ใช้ตามช่วงเวลา" คือเคลียร์กลับไปใช้ช่วงเวลาที่ตั้งไว้ด้านล่างตามปกติ และเมื่อกด "บันทึกช่วงเวลา" ใหม่ ระบบจะเคลียร์สถานะบังคับเปิด/ปิดให้อัตโนมัติ
         </p>
 
       </div>
