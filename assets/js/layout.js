@@ -19,10 +19,13 @@
     (roles[0] && roles[0].roleType) ||
     "";
 
+  let gradingCountdownTimer = null;
+
   document.addEventListener("DOMContentLoaded", function () {
     renderHeader();
     renderSidebar();
     bindEvents();
+    initGradingCountdown();
   });
 
   function renderHeader() {
@@ -52,6 +55,10 @@
           <span class="hidden sm:inline text-wsecondary font-bold text-lg">ระบบบริหารจัดการวัดและประเมินผลการเรียนรู้<br>โรงเรียนเทศบาลวัดโขดทิมทาราม</span>
         </div>
         <div class="flex items-center gap-2 sm:gap-4">
+          <div id="gradingCountdown" class="hidden items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 whitespace-nowrap">
+            <i class="fa-solid fa-clock"></i>
+            <span id="gradingCountdownText">-</span>
+          </div>
           ${roleSwitcher}
           <span class="hidden sm:inline text-sm text-gray-600">
             <i class="fa-solid fa-user-circle mr-1"></i>${userData.fullName || userData.username}
@@ -117,12 +124,9 @@
         confirmButtonColor: "#d33",
       }).then((result) => {
         if (result.isConfirmed) {
-          callApi("logout", {}).finally(() => {
-            sessionStorage.removeItem("wscore_user");
-            sessionStorage.removeItem("wscore_token");
-            sessionStorage.removeItem("wscore_current_role");
-            window.location.href = "login.html";
-          });
+          sessionStorage.removeItem("wscore_user");
+          sessionStorage.removeItem("wscore_current_role");
+          window.location.href = "login.html";
         }
       });
     });
@@ -150,5 +154,98 @@
 
     sidebarToggle.addEventListener("click", openSidebar);
     sidebarOverlay.addEventListener("click", closeSidebar);
+  }
+
+  // ===== ตัวนับถอยหลังช่วงเวลาบันทึกคะแนน (แสดงด้านซ้ายของตัวเลือกบทบาท ให้ทุกบทบาทเห็นเสมอ) =====
+
+  function initGradingCountdown() {
+    fetchGradingPeriodStatus();
+    // ดึงสถานะใหม่เป็นระยะ เผื่อนายทะเบียนเปลี่ยนช่วงเวลาระหว่างที่หน้านี้เปิดค้างไว้
+    setInterval(fetchGradingPeriodStatus, 5 * 60 * 1000);
+  }
+
+  async function fetchGradingPeriodStatus() {
+    try {
+      const result = await callApi("getGradingPeriodStatus");
+      if (result && result.status === "success") {
+        applyGradingPeriodStatus(result.data);
+      }
+    } catch (err) {
+      // เงียบไว้ ไม่ให้กระทบการใช้งานหลักถ้าดึงสถานะไม่สำเร็จ (เช่น เน็ตหลุดชั่วคราว)
+    }
+  }
+
+  function applyGradingPeriodStatus(data) {
+    if (gradingCountdownTimer) {
+      clearInterval(gradingCountdownTimer);
+      gradingCountdownTimer = null;
+    }
+
+    const el = document.getElementById("gradingCountdown");
+    const textEl = document.getElementById("gradingCountdownText");
+    if (!el || !textEl) return;
+
+    const periods = data.periods || [];
+    const openPeriod = periods
+      .filter((p) => p.isConfigured && p.isOpen)
+      .sort((a, b) => new Date(a.endDateTime) - new Date(b.endDateTime))[0];
+
+    if (openPeriod) {
+      setCountdownStyle(el, "open");
+      const endMs = new Date(openPeriod.endDateTime).getTime();
+
+      const tick = () => {
+        const diff = endMs - Date.now();
+        if (diff <= 0) {
+          textEl.textContent = `ปิดบันทึกคะแนนภาคเรียนที่ ${openPeriod.semester} แล้ว`;
+          setCountdownStyle(el, "closed");
+          clearInterval(gradingCountdownTimer);
+          gradingCountdownTimer = null;
+          return;
+        }
+        textEl.textContent = `ภาค ${openPeriod.semester} ปิดใน ${formatCountdown(diff)}`;
+      };
+
+      tick();
+      gradingCountdownTimer = setInterval(tick, 1000);
+      return;
+    }
+
+    const closedPeriod = periods.find((p) => p.isConfigured && !p.isOpen);
+    if (closedPeriod) {
+      textEl.textContent = `ปิดบันทึกคะแนนภาคเรียนที่ ${closedPeriod.semester}`;
+      setCountdownStyle(el, "closed");
+      return;
+    }
+
+    // ไม่มีภาคเรียนใดถูกตั้งค่าเวลาไว้เลย -> ไม่ต้องรบกวนสายตา ซ่อนตัวนับถอยหลังไปเลย
+    el.classList.remove("flex");
+    el.classList.add("hidden");
+  }
+
+  function setCountdownStyle(el, state) {
+    el.classList.remove("hidden");
+    el.classList.add("flex");
+    el.classList.remove(
+      "border-gray-200", "bg-gray-50", "text-gray-500",
+      "border-wprimary/30", "bg-wprimary-light", "text-wprimary",
+      "border-red-200", "bg-red-50", "text-red-600"
+    );
+    if (state === "open") {
+      el.classList.add("border-wprimary/30", "bg-wprimary-light", "text-wprimary");
+    } else {
+      el.classList.add("border-red-200", "bg-red-50", "text-red-600");
+    }
+  }
+
+  function formatCountdown(diffMs) {
+    const d = Math.floor(diffMs / 86400000);
+    const h = Math.floor((diffMs % 86400000) / 3600000);
+    const m = Math.floor((diffMs % 3600000) / 60000);
+    const s = Math.floor((diffMs % 60000) / 1000);
+
+    if (d > 0) return `${d} วัน ${h} ชม.`;
+    if (h > 0) return `${h} ชม. ${m} นาที`;
+    return `${m} นาที ${s} วิ`;
   }
 })();
