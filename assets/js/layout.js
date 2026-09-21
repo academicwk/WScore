@@ -186,8 +186,18 @@
     if (!el || !textEl) return;
 
     const periods = data.periods || [];
+
+    // 1) ถูก "บังคับเปิด" แบบไม่จำกัดเวลา (ปุ่มเปิด/ปิด) -> ไม่ต้องนับถอยหลัง โชว์ข้อความเปิดไม่จำกัดเวลาแทน
+    const manualOpenPeriod = periods.find((p) => p.manualStatus === "OPEN");
+    if (manualOpenPeriod) {
+      textEl.textContent = `ภาคเรียนที่ ${manualOpenPeriod.semester} - เปิดไม่จำกัดเวลา`;
+      setCountdownStyle(el, "open");
+      return;
+    }
+
+    // 2) เปิดตามช่วงเวลาที่ตั้งไว้ปกติ (ไม่ได้ถูกบังคับเปิด) -> นับถอยหลัง real-time ถึงระดับวินาที
     const openPeriod = periods
-      .filter((p) => p.isConfigured && p.isOpen)
+      .filter((p) => p.isConfigured && p.isOpen && p.manualStatus !== "OPEN")
       .sort((a, b) => new Date(a.endDateTime) - new Date(b.endDateTime))[0];
 
     if (openPeriod) {
@@ -211,7 +221,8 @@
       return;
     }
 
-    const closedPeriod = periods.find((p) => p.isConfigured && !p.isOpen);
+    // 3) ถูก "บังคับปิด" ทันที หรือหมดเวลาตามช่วงที่ตั้งไว้แล้ว -> โชว์ข้อความปิด
+    const closedPeriod = periods.find((p) => p.manualStatus === "CLOSED" || (p.isConfigured && !p.isOpen));
     if (closedPeriod) {
       textEl.textContent = `ปิดบันทึกคะแนนภาคเรียนที่ ${closedPeriod.semester}`;
       setCountdownStyle(el, "closed");
@@ -241,6 +252,7 @@
     const m = Math.floor((diffMs % 3600000) / 60000);
     const s = Math.floor((diffMs % 60000) / 1000);
 
-    // แสดงครบทุกหน่วยเสมอ (วัน-ชม.-นาที-วินาที) นับถอยหลังแบบ real-time ถึงระดับวินาที
-    return `${d} วัน ${h} ชั่วโมง ${m} นาที ${s} วินาที`;  }
+    // แสดงครบทุกหน่วยเสมอ (วัน-ชั่วโมง-นาที-วินาที) นับถอยหลังแบบ real-time ถึงระดับวินาที
+    return `${d} วัน ${h} ชั่วโมง ${m} นาที ${s} วินาที`;
+  }
 })();
