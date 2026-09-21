@@ -12,7 +12,8 @@ let currentComponents = []; // หน่วย + ปลายภาค (จา�
 let currentStudents = [];
 let currentScores = {}; // key: studentId|componentId|subComponentId -> score
 let activeComponentId = null; // หน่วย/ปลายภาคที่กำลังแสดงอยู่ (แบบแท็บ)
-let isEntryLocked = false; // true เมื่อวิชา/ห้องนี้ "ส่งผลการเรียน" ไปแล้ว ห้ามแก้ไขคะแนนต่อ
+let isEntryLocked = false; // true เมื่อวิชา/ห้องนี้ "ส่งผลการเรียน" ไปแล้ว หรือหมดเวลาที่นายทะเบียนกำหนด ห้ามแก้ไขคะแนนต่อ
+let isPeriodClosed = false; // true เฉพาะกรณีหมดเวลาที่นายทะเบียนกำหนด (แยกจากกรณี "ส่งผลการเรียน" ไปแล้ว เพื่อโชว์ข้อความที่ต่างกัน)
 
 document.addEventListener("DOMContentLoaded", async function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
@@ -118,8 +119,9 @@ async function loadEntryIfReady() {
 
   currentComponents = result.data.components;
   currentStudents = result.data.students;
-  isEntryLocked = !!result.data.isSubmitted;
-
+  isPeriodClosed = result.data.isPeriodOpen === false;
+  isEntryLocked = !!result.data.isSubmitted || isPeriodClosed;
+  
   currentScores = {};
   (result.data.scores || []).forEach((sc) => {
     const key = scoreKey(sc.StudentID, sc.ComponentID, sc.SubComponentID);
@@ -360,7 +362,12 @@ function renderEntryTable() {
     })
     .join("");
 
-  const lockNoticeHtml = isEntryLocked
+  const lockNoticeHtml = isPeriodClosed
+    ? `<div class="bg-red-50 border border-red-200 text-red-600 text-xs px-4 py-2.5">
+        <i class="fa-solid fa-lock mr-1"></i>
+        หมดเวลาที่นายทะเบียนกำหนดให้บันทึกคะแนนของภาคเรียนนี้แล้ว จึงดูข้อมูลได้อย่างเดียว ไม่สามารถบันทึก/แก้ไขคะแนนต่อได้
+      </div>`
+    : isEntryLocked
     ? `<div class="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-4 py-2.5">
         <i class="fa-solid fa-lock mr-1"></i>
         วิชา/ห้องนี้ "ส่งผลการเรียน" ไปแล้ว จึงล็อกไม่ให้แก้ไขคะแนน หากต้องการแก้ไข กรุณา "ถอนผลการเรียน" ในเมนูตัดสินผลการเรียนก่อน
