@@ -64,6 +64,12 @@ const MENU_CONFIG = [
   },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    icon: "fa-clock",
+    label: "ตั้งเวลาบันทึกคะแนน",
+    href: "settings-grading-period.html",
+  },  
+  {
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-chalkboard",
     label: "จัดการห้องเรียน",
     href: "classes-manage.html",
