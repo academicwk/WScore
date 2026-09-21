@@ -203,7 +203,7 @@
           gradingCountdownTimer = null;
           return;
         }
-        textEl.textContent = `ภาค ${openPeriod.semester} ปิดใน ${formatCountdown(diff)}`;
+        textEl.textContent = `ภาคเรียนที่ ${openPeriod.semester} - เหลือเวลาอีก ${formatCountdown(diff)}`;
       };
 
       tick();
@@ -242,6 +242,5 @@
     const s = Math.floor((diffMs % 60000) / 1000);
 
     // แสดงครบทุกหน่วยเสมอ (วัน-ชม.-นาที-วินาที) นับถอยหลังแบบ real-time ถึงระดับวินาที
-    return `${d} วัน ${h} ชม. ${m} นาที ${s} วิ`;
-  }
+    return `${d} วัน ${h} ชั่วโมง ${m} นาที ${s} วินาที`;  }
 })();
