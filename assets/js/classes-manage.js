@@ -185,7 +185,23 @@ async function deleteClass(classId) {
 
   if (!confirmResult.isConfirmed) return;
 
-  const result = await callApi("deleteClass", { classId });
+  let result = await callApi("deleteClass", { classId });
+
+  if (result.status === "confirm_required") {
+    const secondConfirm = await Swal.fire({
+      icon: "warning",
+      title: "มีข้อมูลผูกอยู่กับห้องเรียนนี้",
+      text: result.message,
+      showCancelButton: true,
+      confirmButtonText: "ลบต่อไป",
+      cancelButtonText: "ยกเลิก",
+      confirmButtonColor: "#d33",
+    });
+
+    if (!secondConfirm.isConfirmed) return;
+
+    result = await callApi("deleteClass", { classId, force: true });
+  }
 
   if (result.status === "success") {
     clearApiCache("getClassesPageData");
