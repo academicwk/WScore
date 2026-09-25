@@ -102,6 +102,51 @@
     </div>
   </main>
 
+  <!-- Modal แก้ไขมอบหมายการสอน -->
+  <div id="editAssignModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/40" onclick="closeEditAssignModal()"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-sm">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 class="font-semibold text-wsecondary">แก้ไขมอบหมายการสอน</h2>
+          <button onclick="closeEditAssignModal()" class="text-gray-400 hover:text-gray-600">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+
+        <form id="editAssignForm" class="p-5 space-y-4">
+          <input type="hidden" id="edit-teachingAssignmentId" value="">
+          <input type="hidden" id="edit-academicYearId" value="">
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ครูประจำวิชา</label>
+            <select id="edit-teacherUserId" required
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30"></select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">วิชาที่สอน</label>
+            <select id="edit-subjectId" required
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30"></select>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">ห้องที่สอน</label>
+            <select id="edit-classId" required
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30"></select>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="closeEditAssignModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg">ยกเลิก</button>
+            <button type="submit" id="saveEditAssignBtn"
+                    class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึก</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
 <script src="assets/js/api.config.js"></script>
 <script src="assets/js/menu.config.js"></script>
 <script src="assets/js/layout.js"></script>
