@@ -241,7 +241,23 @@ async function deleteStudent(studentId) {
 
   if (!confirmResult.isConfirmed) return;
 
-  const result = await callApi("deleteStudent", { studentId });
+  let result = await callApi("deleteStudent", { studentId });
+
+  if (result.status === "confirm_required") {
+    const secondConfirm = await Swal.fire({
+      icon: "warning",
+      title: "มีข้อมูลผูกอยู่กับนักเรียนคนนี้",
+      text: result.message,
+      showCancelButton: true,
+      confirmButtonText: "ลบต่อไป",
+      cancelButtonText: "ยกเลิก",
+      confirmButtonColor: "#d33",
+    });
+
+    if (!secondConfirm.isConfirmed) return;
+
+    result = await callApi("deleteStudent", { studentId, force: true });
+  }
 
   if (result.status === "success") {
     clearApiCache("getStudents");
