@@ -32,25 +32,38 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 /**
- * เปิด SweetAlert2 ให้เลือก "รอบการออกรายงาน" ก่อนสร้าง PDF ทุกครั้ง (ทั้งรายบุคคล/รวมห้อง)
- * คืนค่า "sem1" หรือ "full" ถ้ากดยืนยัน, null ถ้ายกเลิก
+ * เปิด SweetAlert2 ให้เลือก "รอบการออกรายงาน" + โหมด "ดูตัวอย่าง (Preview)" ก่อนสร้าง PDF ทุกครั้ง (ทั้งรายบุคคล/รวมห้อง)
+ * โหมดพรีวิว = ข้ามการตรวจสอบว่าส่งผลครบทุกวิชาแล้ว (ใช้ระหว่างที่ระบบยังพัฒนาไม่เสร็จ ข้อมูลรายวิชายังไม่ครบ)
+ * รายงานที่ออกด้วยโหมดนี้จะถูกประทับข้อความ "เอกสารพรีวิว" กำกับไว้เสมอ ไม่ใช่เอกสารทางการ
+ * คืนค่า { scope: "sem1"|"full", preview: true|false } ถ้ากดยืนยัน, null ถ้ายกเลิก
  */
-async function chooseReportScope(title) {
-  const { value: scope, isConfirmed } = await Swal.fire({
+async function chooseReportOptions(title) {
+  const { value, isConfirmed } = await Swal.fire({
     title: title,
-    input: "radio",
-    inputOptions: {
-      sem1: "ภาคเรียนที่ 1 (รายงานระหว่างปี)",
-      full: "ภาคเรียนที่ 2 (รายงานฉบับสมบูรณ์ ทั้งปี)",
-    },
-    inputValue: "sem1",
+    html: `
+      <div class="text-left text-sm">
+        <label class="flex items-center gap-2 mb-2">
+          <input type="radio" name="pt06scope" value="sem1" checked> ภาคเรียนที่ 1 (รายงานระหว่างปี)
+        </label>
+        <label class="flex items-center gap-2 mb-3">
+          <input type="radio" name="pt06scope" value="full"> ภาคเรียนที่ 2 (รายงานฉบับสมบูรณ์ ทั้งปี)
+        </label>
+        <label class="flex items-start gap-2 border-t pt-3 text-gray-600">
+          <input type="checkbox" id="pt06previewCheck" class="mt-1">
+          <span>ดูตัวอย่าง (Preview) — ข้ามการตรวจสอบว่าส่งผลครบทุกวิชา แล้วประทับข้อความ "เอกสารพรีวิว" กำกับในไฟล์ (ใช้ตรวจสอบรูปแบบระหว่างพัฒนาระบบ ยังไม่ใช่เอกสารทางการ)</span>
+        </label>
+      </div>`,
     showCancelButton: true,
     confirmButtonText: "ออกรายงาน",
     cancelButtonText: "ยกเลิก",
     confirmButtonColor: "#268244",
-    inputValidator: (value) => (!value ? "กรุณาเลือกรอบการออกรายงาน" : undefined),
+    preConfirm: () => {
+      const scopeInput = document.querySelector('input[name="pt06scope"]:checked');
+      const previewInput = document.getElementById("pt06previewCheck");
+      return { scope: scopeInput ? scopeInput.value : "sem1", preview: previewInput ? previewInput.checked : false };
+    },
   });
-  return isConfirmed ? scope : null;
+  return isConfirmed ? value : null;
 }
 
 function downloadPdfFromBase64(base64, fileName) {
@@ -73,16 +86,32 @@ function downloadPdfFromBase64(base64, fileName) {
 }
 
 async function generateStudentReport(userId, classId, studentId) {
-  const scope = await chooseReportScope("ออกรายงาน ปถ.06 รายบุคคล");
-  if (!scope) return;
+  const opts = await chooseReportOptions("ออกรายงาน ปถ.06 รายบุคคล");
+  if (!opts) return;
 
-  Swal.fire({ title: "กำลังสร้างรายงาน...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+  Swal.fire({
+    title: opts.preview ? "กำลังสร้างตัวอย่างรายงาน..." : "กำลังสร้างรายงาน...",
+    allowOutsideClick: false,
+    didOpen: () => Swal.showLoading(),
+  });
   try {
-    const result = await callApi("generateHomeroomStudentReport", { userId, classId, studentId, reportScope: scope });
+    const result = await callApi("generateHomeroomStudentReport", {
+      userId,
+      classId,
+      studentId,
+      reportScope: opts.scope,
+      preview: opts.preview,
+    });
     Swal.close();
     if (result.status === "success") {
       downloadPdfFromBase64(result.data.base64, result.data.fileName);
-      Swal.fire({ icon: "success", title: "สร้างรายงานสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+      Swal.fire({
+        icon: "success",
+        title: opts.preview ? "สร้างตัวอย่างรายงานสำเร็จ" : "สร้างรายงานสำเร็จ",
+        confirmButtonColor: "#268244",
+        timer: 1200,
+        showConfirmButton: false,
+      });
     } else {
       Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
     }
@@ -98,18 +127,22 @@ async function generateClassReport(userId, classId) {
     return;
   }
 
-  const scope = await chooseReportScope("ออกรายงาน ปถ.06 รวมทั้งห้อง");
-  if (!scope) return;
+  const opts = await chooseReportOptions("ออกรายงาน ปถ.06 รวมทั้งห้อง");
+  if (!opts) return;
 
-  Swal.fire({ title: "กำลังสร้างรายงาน (อาจใช้เวลาสักครู่)...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+  Swal.fire({
+    title: (opts.preview ? "กำลังสร้างตัวอย่างรายงาน" : "กำลังสร้างรายงาน") + " (อาจใช้เวลาสักครู่)...",
+    allowOutsideClick: false,
+    didOpen: () => Swal.showLoading(),
+  });
   try {
-    const result = await callApi("generateHomeroomClassReport", { userId, classId, reportScope: scope });
+    const result = await callApi("generateHomeroomClassReport", { userId, classId, reportScope: opts.scope, preview: opts.preview });
     Swal.close();
     if (result.status === "success") {
       downloadPdfFromBase64(result.data.base64, result.data.fileName);
       Swal.fire({
         icon: "success",
-        title: "สร้างรายงานสำเร็จ (" + result.data.studentCount + " คน)",
+        title: (opts.preview ? "สร้างตัวอย่างรายงานสำเร็จ" : "สร้างรายงานสำเร็จ") + " (" + result.data.studentCount + " คน)",
         confirmButtonColor: "#268244",
         timer: 1500,
         showConfirmButton: false,
