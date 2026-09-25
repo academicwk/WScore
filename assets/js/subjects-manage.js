@@ -208,7 +208,23 @@ async function deleteSubject(subjectId) {
 
   if (!confirmResult.isConfirmed) return;
 
-  const result = await callApi("deleteSubject", { subjectId });
+  let result = await callApi("deleteSubject", { subjectId });
+
+  if (result.status === "confirm_required") {
+    const secondConfirm = await Swal.fire({
+      icon: "warning",
+      title: "มีข้อมูลผูกอยู่กับวิชานี้",
+      text: result.message,
+      showCancelButton: true,
+      confirmButtonText: "ลบต่อไป",
+      cancelButtonText: "ยกเลิก",
+      confirmButtonColor: "#d33",
+    });
+
+    if (!secondConfirm.isConfirmed) return;
+
+    result = await callApi("deleteSubject", { subjectId, force: true });
+  }
 
   if (result.status === "success") {
     clearApiCache("getSubjects");
