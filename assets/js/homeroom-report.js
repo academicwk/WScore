@@ -1,8 +1,8 @@
 /**
  * W-Score : ออกรายงาน ปถ.06 (สำหรับครูประจำชั้น)
  * แสดงผลการเรียนทุกวิชาของนักเรียนรายบุคคลที่เลือก (ในห้องที่ตนเองเป็นครูประจำชั้น)
- * ปุ่มออกรายงาน PDF (รายบุคคล/รายห้อง) ยังปิดใช้งานอยู่ รอไฟล์เทมเพลต ปถ.06 (.xlsx) จากผู้ใช้งานก่อน
- * จึงจะผูก action สร้าง PDF จริงได้ (รูปแบบเดียวกับ generateSubjectReport ของรายงาน ปถ.05)
+ * ออกรายงาน PDF ได้ 2 รอบ: "ภาคเรียนที่ 1" (รายงานระหว่างปี) และ "ฉบับสมบูรณ์" (ท้ายปี รวมทุกภาคเรียน)
+ * ทั้งรายบุคคลและรวมทั้งห้อง (รวมห้อง = ไฟล์ PDF เดียว นักเรียน 1 คน = 1 หน้า)
  */
 
 let currentClasses = [];
@@ -24,9 +24,104 @@ document.addEventListener("DOMContentLoaded", function () {
     }
     loadStudentReport(userData.userId, currentClassId, this.value);
   });
+  document.getElementById("printClassBtn").addEventListener("click", function () {
+    generateClassReport(userData.userId, currentClassId);
+  });
 
   loadClassData(userData.userId, null);
 });
+
+/**
+ * เปิด SweetAlert2 ให้เลือก "รอบการออกรายงาน" ก่อนสร้าง PDF ทุกครั้ง (ทั้งรายบุคคล/รวมห้อง)
+ * คืนค่า "sem1" หรือ "full" ถ้ากดยืนยัน, null ถ้ายกเลิก
+ */
+async function chooseReportScope(title) {
+  const { value: scope, isConfirmed } = await Swal.fire({
+    title: title,
+    input: "radio",
+    inputOptions: {
+      sem1: "ภาคเรียนที่ 1 (รายงานระหว่างปี)",
+      full: "ภาคเรียนที่ 2 (รายงานฉบับสมบูรณ์ ทั้งปี)",
+    },
+    inputValue: "sem1",
+    showCancelButton: true,
+    confirmButtonText: "ออกรายงาน",
+    cancelButtonText: "ยกเลิก",
+    confirmButtonColor: "#268244",
+    inputValidator: (value) => (!value ? "กรุณาเลือกรอบการออกรายงาน" : undefined),
+  });
+  return isConfirmed ? scope : null;
+}
+
+function downloadPdfFromBase64(base64, fileName) {
+  const byteChars = atob(base64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteNumbers[i] = byteChars.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  const blob = new Blob([byteArray], { type: "application/pdf" });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function generateStudentReport(userId, classId, studentId) {
+  const scope = await chooseReportScope("ออกรายงาน ปถ.06 รายบุคคล");
+  if (!scope) return;
+
+  Swal.fire({ title: "กำลังสร้างรายงาน...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+  try {
+    const result = await callApi("generateHomeroomStudentReport", { userId, classId, studentId, reportScope: scope });
+    Swal.close();
+    if (result.status === "success") {
+      downloadPdfFromBase64(result.data.base64, result.data.fileName);
+      Swal.fire({ icon: "success", title: "สร้างรายงานสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+    } else {
+      Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+    }
+  } catch (err) {
+    Swal.close();
+    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
+  }
+}
+
+async function generateClassReport(userId, classId) {
+  if (!classId) {
+    Swal.fire({ icon: "warning", title: "กรุณาเลือกห้องเรียนก่อน", confirmButtonColor: "#268244" });
+    return;
+  }
+
+  const scope = await chooseReportScope("ออกรายงาน ปถ.06 รวมทั้งห้อง");
+  if (!scope) return;
+
+  Swal.fire({ title: "กำลังสร้างรายงาน (อาจใช้เวลาสักครู่)...", allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+  try {
+    const result = await callApi("generateHomeroomClassReport", { userId, classId, reportScope: scope });
+    Swal.close();
+    if (result.status === "success") {
+      downloadPdfFromBase64(result.data.base64, result.data.fileName);
+      Swal.fire({
+        icon: "success",
+        title: "สร้างรายงานสำเร็จ (" + result.data.studentCount + " คน)",
+        confirmButtonColor: "#268244",
+        timer: 1500,
+        showConfirmButton: false,
+      });
+    } else {
+      Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+    }
+  } catch (err) {
+    Swal.close();
+    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
+  }
+}
 
 async function loadClassData(userId, classId) {
   const studentSelect = document.getElementById("studentFilter");
@@ -95,7 +190,7 @@ async function loadStudentReport(userId, classId, studentId) {
       return;
     }
 
-    renderStudentReport(result.data);
+    renderStudentReport(result.data, userId, classId, studentId);
   } catch (err) {
     content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</div>`;
   }
@@ -111,7 +206,7 @@ function submitStatusBadge(isSubmitted) {
     : `<span class="text-[11px] text-gray-400"><i class="fa-regular fa-circle mr-1"></i>ยังไม่ส่ง</span>`;
 }
 
-function renderStudentReport(data) {
+function renderStudentReport(data, userId, classId, studentId) {
   const rowsHtml = data.subjects.length
     ? data.subjects
         .map(
@@ -148,9 +243,9 @@ function renderStudentReport(data) {
             <p class="text-xs text-gray-400">เกรดเฉลี่ย (GPAX)</p>
             <p class="text-xl font-bold text-wsecondary">${data.gpax !== null ? data.gpax.toFixed(2) : "-"}</p>
           </div>
-          <button disabled title="รอไฟล์เทมเพลต ปถ.06 จากผู้ดูแลระบบ"
-                  class="px-4 py-2.5 text-sm font-medium text-gray-400 bg-gray-200 rounded-lg whitespace-nowrap cursor-not-allowed">
-            <i class="fa-solid fa-lock mr-1.5"></i>ออกรายงาน (PDF)
+          <button id="printStudentBtn"
+                  class="px-4 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg whitespace-nowrap">
+            <i class="fa-solid fa-file-pdf mr-1.5"></i>ออกรายงาน (PDF)
           </button>
         </div>
       </div>
@@ -174,4 +269,8 @@ function renderStudentReport(data) {
         </table>
       </div>
     </div>`;
+
+  document.getElementById("printStudentBtn").addEventListener("click", function () {
+    generateStudentReport(userId, classId, studentId);
+  });
 }
