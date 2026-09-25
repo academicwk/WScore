@@ -37,7 +37,7 @@ const MENU_CONFIG = [
   icon: "fa-file-pdf",
   label: "รายงาน ปถ.05",
   href: "grade-report.html",
-},  
+},
   {
     roles: ["HOMEROOM_TEACHER"],
     icon: "fa-chalkboard-user",
@@ -57,6 +57,12 @@ const MENU_CONFIG = [
     href: "homeroom-evaluation.html",
   },
   {
+    roles: ["HOMEROOM_TEACHER"],
+    icon: "fa-file-pdf",
+    label: "ออกรายงาน ปถ.06",
+    href: "homeroom-report.html",
+  },
+  {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-calendar-days",
     label: "ตั้งค่าปีการศึกษา",
@@ -67,7 +73,7 @@ const MENU_CONFIG = [
     icon: "fa-clock",
     label: "ตั้งเวลาบันทึกคะแนน",
     href: "settings-grading-period.html",
-  },  
+  },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-chalkboard",
@@ -79,7 +85,7 @@ const MENU_CONFIG = [
     icon: "fa-people-group",
     label: "จัดนักเรียนเข้าห้องเรียน",
     href: "enrollments-manage.html",
-  },  
+  },
 
     {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
@@ -88,13 +94,13 @@ const MENU_CONFIG = [
     href: "students-manage.html",
   },
 
-  
+
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-book",
     label: "จัดการหลักสูตร/รายวิชา",
     href: "subjects-manage.html",
-  }, 
+  },
 
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
@@ -102,7 +108,7 @@ const MENU_CONFIG = [
     label: "จัดการมอบหมายการสอน",
     href: "teaching-assignments-manage.html",
   },
-  
+
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-clipboard-check",
