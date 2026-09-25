@@ -14,6 +14,7 @@
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 
 <link rel="stylesheet" href="assets/css/style.css">
 </head>
@@ -32,6 +33,10 @@
         <div class="flex items-center gap-2">
           <input id="searchInput" type="text" placeholder="ค้นหารหัส/ชื่อวิชา"
                  class="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30 w-full sm:w-56">
+          <button id="importSubjectBtn" class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition whitespace-nowrap">
+            <i class="fa-solid fa-file-import"></i>
+            <span class="hidden sm:inline">นำเข้าจากไฟล์</span>
+          </button>
           <button id="addSubjectBtn" class="flex items-center gap-2 bg-wprimary hover:bg-wprimary-dark text-white text-sm font-medium px-4 py-2 rounded-lg transition whitespace-nowrap">
             <i class="fa-solid fa-plus"></i>
             <span class="hidden sm:inline">เพิ่มรายวิชา</span>
@@ -169,6 +174,74 @@
                     class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">บันทึก</button>
           </div>
         </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal นำเข้ารายวิชาจากไฟล์เทมเพลต -->
+  <div id="importModal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/40" onclick="closeImportModal()"></div>
+    <div class="absolute inset-0 flex items-center justify-center p-4">
+      <div class="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 class="font-semibold text-wsecondary">นำเข้ารายวิชาจากไฟล์เทมเพลต</h2>
+          <button onclick="closeImportModal()" class="text-gray-400 hover:text-gray-600">
+            <i class="fa-solid fa-xmark text-lg"></i>
+          </button>
+        </div>
+
+        <div class="p-5 space-y-4">
+          <div class="bg-wprimary-light/40 border border-wprimary/20 rounded-lg p-3 text-xs text-gray-600 space-y-1">
+            <p><i class="fa-solid fa-circle-info text-wprimary mr-1"></i>ดาวน์โหลดไฟล์เทมเพลต กรอกข้อมูลตามคอลัมน์ที่กำหนด แล้วอัปโหลดกลับเข้ามาที่นี่ (รองรับไฟล์ .xlsx และ .csv)</p>
+            <p>ประเภทวิชาต้องเป็นค่าใดค่าหนึ่ง: พื้นฐาน / เพิ่มเติม / กิจกรรมพัฒนาผู้เรียน</p>
+            <p>ระดับชั้นต้องเป็นค่าใดค่าหนึ่งตามตัวเลือกในฟอร์มเพิ่มรายวิชาปกติ (เช่น อนุบาล 1, ป.1 - ป.6)</p>
+            <p>ไม่ต้องกรอก "รูปแบบการประเมิน" และ "ชั่วโมง" ระบบจะคำนวณให้อัตโนมัติจากประเภทวิชาและหน่วยกิต</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="downloadTemplateBtn" type="button"
+                    class="flex items-center gap-2 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium px-4 py-2 rounded-lg transition">
+              <i class="fa-solid fa-download"></i>ดาวน์โหลดไฟล์เทมเพลต
+            </button>
+            <label class="flex items-center gap-2 bg-wprimary hover:bg-wprimary-dark text-white text-sm font-medium px-4 py-2 rounded-lg transition cursor-pointer">
+              <i class="fa-solid fa-upload"></i>เลือกไฟล์ที่กรอกแล้ว
+              <input id="importFileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden">
+            </label>
+            <span id="importFileName" class="text-xs text-gray-500"></span>
+          </div>
+
+          <div id="importPreviewWrap" class="hidden">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-sm font-bold text-wsecondary">ตรวจสอบข้อมูลก่อนนำเข้า</h3>
+              <span id="importSummaryText" class="text-xs text-gray-500"></span>
+            </div>
+            <div class="border border-gray-200 rounded-lg overflow-hidden">
+              <div class="overflow-x-auto max-h-72 overflow-y-auto">
+                <table class="w-full text-sm">
+                  <thead class="bg-gray-50 text-gray-500 text-xs uppercase sticky top-0">
+                    <tr>
+                      <th class="px-3 py-2 text-left">รหัสวิชา</th>
+                      <th class="px-3 py-2 text-left">ชื่อวิชา</th>
+                      <th class="px-3 py-2 text-left">ประเภทวิชา</th>
+                      <th class="px-3 py-2 text-left">ระดับชั้น</th>
+                      <th class="px-3 py-2 text-left">สถานะ</th>
+                    </tr>
+                  </thead>
+                  <tbody id="importPreviewBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 pt-2">
+            <button type="button" onclick="closeImportModal()"
+                    class="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-lg">ยกเลิก</button>
+            <button id="confirmImportBtn" type="button" onclick="handleConfirmImport()" disabled
+                    class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+              ยืนยันนำเข้า
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
