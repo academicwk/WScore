@@ -1,5 +1,6 @@
 /**
  * W-Score : จัดการมอบหมายการสอน (สำหรับนายทะเบียน / ผู้ช่วยนายทะเบียน)
+ * ลำดับการมอบหมาย: เลือกปีการศึกษา -> เลือกครูประจำวิชา -> เลือกวิชาที่สอน -> เลือกห้องที่สอน (เลือกได้หลายห้อง)
  */
 
 let allYears = [];
@@ -12,10 +13,13 @@ document.addEventListener("DOMContentLoaded", async function () {
   await loadPageData();
 
   document.getElementById("yearFilter").addEventListener("change", () => {
-    renderClassOptionsForYear();
+    renderClassCheckboxes();
     renderAssignmentTable();
   });
-  document.getElementById("classFilter").addEventListener("change", renderAssignmentTable);
+  document.getElementById("f-teacherUserId").addEventListener("change", renderClassCheckboxes);
+  document.getElementById("f-subjectId").addEventListener("change", renderClassCheckboxes);
+  document.getElementById("teacherSearch").addEventListener("input", filterTeacherOptions);
+  document.getElementById("teacherTableFilter").addEventListener("change", renderAssignmentTable);
   document.getElementById("assignForm").addEventListener("submit", handleSubmitAssign);
 });
 
@@ -38,24 +42,42 @@ async function loadPageData() {
   const current = allYears.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE");
   if (current) document.getElementById("yearFilter").value = current.AcademicYearID;
 
-  renderClassOptionsForYear();
+  const sortedTeachers = allTeachers.slice().sort((a, b) => a.fullName.localeCompare(b.fullName, "th"));
+  const teacherOptions = sortedTeachers.map((t) => `<option value="${t.userId}">${t.fullName}</option>`).join("");
+  document.getElementById("f-teacherUserId").innerHTML = teacherOptions;
+  document.getElementById("teacherTableFilter").innerHTML =
+    `<option value="">- ครูผู้สอนทั้งหมด -</option>` + teacherOptions;
+
+  const sortedSubjects = allSubjects
+    .slice()
+    .sort(
+      (a, b) =>
+        String(a.GradeLevel).localeCompare(String(b.GradeLevel), "th") ||
+        a.SubjectName.localeCompare(b.SubjectName, "th")
+    );
+  document.getElementById("f-subjectId").innerHTML = sortedSubjects
+    .map((s) => `<option value="${s.SubjectID}">${s.SubjectName} (${s.GradeLevel})</option>`)
+    .join("");
+
+  renderClassCheckboxes();
   renderAssignmentTable();
 }
 
-function renderClassOptionsForYear() {
-  const yearId = document.getElementById("yearFilter").value;
-  const classesInYear = allClasses.filter((c) => String(c.AcademicYearID) === String(yearId));
+function filterTeacherOptions() {
+  const q = this.value.trim().toLowerCase();
+  const select = document.getElementById("f-teacherUserId");
+  let firstVisible = null;
 
-  const options = classesInYear
-    .map((c) => `<option value="${c.ClassID}">${c.GradeLevel}/${c.RoomNumber}</option>`)
-    .join("");
+  Array.from(select.options).forEach((opt) => {
+    const match = opt.text.toLowerCase().indexOf(q) !== -1;
+    opt.hidden = !match;
+    if (match && !firstVisible) firstVisible = opt;
+  });
 
-  document.getElementById("classFilter").innerHTML = `<option value="">- เลือกห้องเรียน -</option>` + options;
-}
-
-function renderEmptyTable(message) {
-  document.getElementById("assignmentTableBody").innerHTML =
-    `<tr><td colspan="4" class="text-center text-gray-400 py-6">${message}</td></tr>`;
+  if (firstVisible) {
+    select.value = firstVisible.value;
+  }
+  renderClassCheckboxes();
 }
 
 function teacherName(userId) {
@@ -63,133 +85,83 @@ function teacherName(userId) {
   return found ? found.fullName : userId;
 }
 
-function renderAssignmentTable() {
-  const classId = document.getElementById("classFilter").value;
+function subjectName(subjectId) {
+  const found = allSubjects.find((s) => String(s.SubjectID) === String(subjectId));
+  return found ? found.SubjectName : subjectId;
+}
+
+function renderClassCheckboxes() {
+  const container = document.getElementById("classCheckboxList");
   const yearId = document.getElementById("yearFilter").value;
+  const teacherUserId = document.getElementById("f-teacherUserId").value;
+  const subjectId = document.getElementById("f-subjectId").value;
 
-  const classesToShow = classId
-    ? allClasses.filter((c) => String(c.ClassID) === String(classId))
-    : allClasses.filter((c) => String(c.AcademicYearID) === String(yearId));
-
-  if (classesToShow.length === 0) {
-    renderEmptyTable("ไม่พบห้องเรียนในปีการศึกษานี้");
+  if (!yearId || !teacherUserId || !subjectId) {
+    container.innerHTML = `<span class="text-xs text-gray-400 col-span-full">กรุณาเลือกครูและวิชาก่อน</span>`;
     return;
   }
 
-  const rows = [];
-  classesToShow.forEach((cls) => {
-    allSubjects
-      .filter((s) => s.GradeLevel === cls.GradeLevel)
-      .forEach((subj) => rows.push({ cls, subj }));
-  });
+  const subject = allSubjects.find((s) => String(s.SubjectID) === String(subjectId));
+  const classesForGrade = allClasses.filter(
+    (c) => String(c.AcademicYearID) === String(yearId) && String(c.GradeLevel) === String(subject.GradeLevel)
+  );
 
-  if (rows.length === 0) {
-    renderEmptyTable("ไม่พบรายวิชาสำหรับระดับชั้นนี้");
+  if (classesForGrade.length === 0) {
+    container.innerHTML = `<span class="text-xs text-gray-400 col-span-full">ไม่พบห้องเรียนระดับชั้น ${subject.GradeLevel} ในปีการศึกษานี้</span>`;
     return;
   }
 
-  const tbody = document.getElementById("assignmentTableBody");
-
-  tbody.innerHTML = rows
-    .map(({ cls, subj }) => {
-      const assignedTeachers = allAssignments.filter(
+  container.innerHTML = classesForGrade
+    .map((c) => {
+      const sameGroup = allAssignments.filter(
         (a) =>
-          String(a.ClassID) === String(cls.ClassID) &&
-          String(a.SubjectID) === String(subj.SubjectID) &&
-          String(a.AcademicYearID) === String(cls.AcademicYearID)
+          String(a.ClassID) === String(c.ClassID) &&
+          String(a.SubjectID) === String(subjectId) &&
+          String(a.AcademicYearID) === String(yearId)
       );
-
-      const chipsHtml =
-        assignedTeachers.length === 0
-          ? `<span class="text-gray-400 text-xs">ยังไม่มีครูผู้สอน</span>`
-          : assignedTeachers
-              .map(
-                (a) => `
-          <span class="inline-flex items-center gap-1.5 bg-wprimary-light text-wprimary text-xs font-medium px-2.5 py-1 rounded-full mr-1.5 mb-1">
-            ${teacherName(a.TeacherUserID)}
-            <button onclick="removeAssignment('${a.TeachingAssignmentID}')" class="hover:text-red-500">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-          </span>`
-              )
-              .join("");
-
-      const canAddMore = assignedTeachers.length < 4;
+      const alreadyAssigned = sameGroup.some((a) => String(a.TeacherUserID) === String(teacherUserId));
+      const isFull = sameGroup.length >= 4;
+      const disabled = alreadyAssigned || isFull;
+      const noteText = alreadyAssigned ? "มอบหมายแล้ว" : isFull ? "เต็มแล้ว" : "";
 
       return `
-    <tr class="border-b border-gray-100">
-      <td class="px-4 py-3 text-gray-600 align-top whitespace-nowrap">${cls.GradeLevel}/${cls.RoomNumber}</td>
-      <td class="px-4 py-3 font-medium text-wsecondary align-top">${subj.SubjectName}</td>
-      <td class="px-4 py-3 align-top">${chipsHtml}</td>
-      <td class="px-4 py-3 text-right align-top">
-        ${
-          canAddMore
-            ? `<button onclick='openAssignModal(${JSON.stringify(cls.ClassID)}, ${JSON.stringify(cls.AcademicYearID)}, ${JSON.stringify(cls.GradeLevel + "/" + cls.RoomNumber)}, ${JSON.stringify(subj.SubjectID)}, ${JSON.stringify(subj.SubjectName)})' class="text-wprimary hover:underline text-xs font-medium">+ เพิ่มครู</button>`
-            : `<span class="text-gray-400 text-xs">ครบ 4 คนแล้ว</span>`
-        }
-      </td>
-    </tr>`;
+      <label class="flex items-center gap-2 text-sm ${disabled ? "text-gray-400" : "text-gray-700"}">
+        <input type="checkbox" value="${c.ClassID}" class="class-checkbox" ${disabled ? "disabled" : ""}>
+        <span>${c.GradeLevel}/${c.RoomNumber}${noteText ? ` (${noteText})` : ""}</span>
+      </label>`;
     })
     .join("");
-}
-function openAssignModal(classId, yearId, className, subjectId, subjectName) {
-  const assignedTeacherIds = allAssignments
-    .filter(
-      (a) =>
-        String(a.ClassID) === String(classId) &&
-        String(a.SubjectID) === String(subjectId) &&
-        String(a.AcademicYearID) === String(yearId)
-    )
-    .map((a) => String(a.TeacherUserID));
-
-  const availableTeachers = allTeachers.filter((t) => assignedTeacherIds.indexOf(String(t.userId)) === -1);
-
-  if (availableTeachers.length === 0) {
-    Swal.fire({ icon: "info", title: "ไม่มีครูที่สามารถเพิ่มได้แล้ว", confirmButtonColor: "#268244" });
-    return;
-  }
-
-  document.getElementById("f-classId").value = classId;
-  document.getElementById("f-academicYearId").value = yearId;
-  document.getElementById("f-className").value = className;
-  document.getElementById("f-subjectId").value = subjectId;
-  document.getElementById("f-subjectName").value = subjectName;
-  document.getElementById("f-teacherUserId").innerHTML = availableTeachers
-    .map((t) => `<option value="${t.userId}">${t.fullName}</option>`)
-    .join("");
-
-  document.getElementById("assignModal").classList.remove("hidden");
-}
-
-function closeAssignModal() {
-  document.getElementById("assignModal").classList.add("hidden");
 }
 
 async function handleSubmitAssign(e) {
   e.preventDefault();
 
-  const classId = document.getElementById("f-classId").value;
-  const yearId = document.getElementById("f-academicYearId").value;
-  const subjectId = document.getElementById("f-subjectId").value;
+  const academicYearId = document.getElementById("yearFilter").value;
   const teacherUserId = document.getElementById("f-teacherUserId").value;
+  const subjectId = document.getElementById("f-subjectId").value;
+  const classIds = Array.from(document.querySelectorAll(".class-checkbox:checked")).map((el) => el.value);
 
-  const submitBtn = document.querySelector("#assignForm button[type='submit']");
+  if (!academicYearId || !teacherUserId || !subjectId || classIds.length === 0) {
+    Swal.fire({ icon: "warning", title: "กรุณาเลือกครู วิชา และห้องที่สอนอย่างน้อย 1 ห้อง", confirmButtonColor: "#268244" });
+    return;
+  }
+
+  const submitBtn = document.getElementById("saveAssignBtn");
   submitBtn.disabled = true;
   submitBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึก...';
 
   try {
-    const result = await callApi("addTeachingAssignment", {
-      classId,
-      subjectId,
-      academicYearId: yearId,
+    const result = await callApi("addTeachingAssignmentsBulk", {
+      academicYearId,
       teacherUserId,
+      subjectId,
+      classIds,
     });
 
     if (result.status === "success") {
-      closeAssignModal();
       clearApiCache("getTeachingAssignmentsPageData");
       await loadPageData();
-      Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+      Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", text: result.message, confirmButtonColor: "#268244" });
     } else {
       Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
     }
@@ -197,8 +169,59 @@ async function handleSubmitAssign(e) {
     Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
   } finally {
     submitBtn.disabled = false;
-    submitBtn.innerHTML = "บันทึก";
+    submitBtn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกมอบหมาย';
   }
+}
+
+function renderEmptyTable(message) {
+  document.getElementById("assignmentTableBody").innerHTML =
+    `<tr><td colspan="4" class="text-center text-gray-400 py-6">${message}</td></tr>`;
+}
+
+function renderAssignmentTable() {
+  const yearId = document.getElementById("yearFilter").value;
+  const teacherFilterId = document.getElementById("teacherTableFilter").value;
+
+  let rows = allAssignments.filter((a) => String(a.AcademicYearID) === String(yearId));
+  if (teacherFilterId) {
+    rows = rows.filter((a) => String(a.TeacherUserID) === String(teacherFilterId));
+  }
+
+  if (rows.length === 0) {
+    renderEmptyTable("ยังไม่มีการมอบหมายการสอนในปีการศึกษานี้");
+    return;
+  }
+
+  const enriched = rows
+    .map((a) => {
+      const cls = allClasses.find((c) => String(c.ClassID) === String(a.ClassID));
+      return {
+        id: a.TeachingAssignmentID,
+        teacher: teacherName(a.TeacherUserID),
+        subject: subjectName(a.SubjectID),
+        className: cls ? `${cls.GradeLevel}/${cls.RoomNumber}` : a.ClassID,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.teacher.localeCompare(b.teacher, "th") ||
+        a.subject.localeCompare(b.subject, "th") ||
+        a.className.localeCompare(b.className, "th")
+    );
+
+  document.getElementById("assignmentTableBody").innerHTML = enriched
+    .map(
+      (r) => `
+    <tr class="border-b border-gray-100">
+      <td class="px-4 py-3 font-medium text-wsecondary">${r.teacher}</td>
+      <td class="px-4 py-3 text-gray-600">${r.subject}</td>
+      <td class="px-4 py-3 text-gray-600">${r.className}</td>
+      <td class="px-4 py-3 text-right">
+        <button onclick="removeAssignment('${r.id}')" class="text-red-500 hover:underline text-xs font-medium">นำออก</button>
+      </td>
+    </tr>`
+    )
+    .join("");
 }
 
 async function removeAssignment(teachingAssignmentId) {
@@ -214,7 +237,23 @@ async function removeAssignment(teachingAssignmentId) {
 
   if (!confirmResult.isConfirmed) return;
 
-  const result = await callApi("deleteTeachingAssignment", { teachingAssignmentId });
+  let result = await callApi("deleteTeachingAssignment", { teachingAssignmentId });
+
+  if (result.status === "confirm_required") {
+    const secondConfirm = await Swal.fire({
+      icon: "warning",
+      title: "มีคะแนนที่กรอกไว้แล้ว",
+      text: result.message,
+      showCancelButton: true,
+      confirmButtonText: "นำออกต่อไป",
+      cancelButtonText: "ยกเลิก",
+      confirmButtonColor: "#d33",
+    });
+
+    if (!secondConfirm.isConfirmed) return;
+
+    result = await callApi("deleteTeachingAssignment", { teachingAssignmentId, force: true });
+  }
 
   if (result.status === "success") {
     clearApiCache("getTeachingAssignmentsPageData");
