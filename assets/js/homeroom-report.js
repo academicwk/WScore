@@ -1,7 +1,8 @@
 /**
  * W-Score : ออกรายงาน ปถ.06 (สำหรับครูประจำชั้น)
  * แสดงผลการเรียนทุกวิชาของนักเรียนรายบุคคลที่เลือก (ในห้องที่ตนเองเป็นครูประจำชั้น)
- * ออกรายงาน PDF ได้ 2 รอบ: "ภาคเรียนที่ 1" (รายงานระหว่างปี) และ "ฉบับสมบูรณ์" (ท้ายปี รวมทุกภาคเรียน)
+ * เทมเพลตเวอร์ชันนี้มีคอลัมน์แยกภาคเรียนที่ 1/ภาคเรียนที่ 2/สรุปผลปลายปีอยู่ในตารางเดียวกันแล้ว
+ * รายงานจึงแสดง "สถานะจริง ณ ตอนออกรายงาน" เสมอ (คอลัมน์ไหนยังไม่ส่งผลจะเป็น "-" อัตโนมัติ) ไม่ต้องเลือกรอบการออกรายงานอีกต่อไป
  * ทั้งรายบุคคลและรวมทั้งห้อง (รวมห้อง = ไฟล์ PDF เดียว นักเรียน 1 คน = 1 หน้า)
  */
 
@@ -32,38 +33,29 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 /**
- * เปิด SweetAlert2 ให้เลือก "รอบการออกรายงาน" + โหมด "ดูตัวอย่าง (Preview)" ก่อนสร้าง PDF ทุกครั้ง (ทั้งรายบุคคล/รวมห้อง)
- * โหมดพรีวิว = ข้ามการตรวจสอบว่าส่งผลครบทุกวิชาแล้ว (ใช้ระหว่างที่ระบบยังพัฒนาไม่เสร็จ ข้อมูลรายวิชายังไม่ครบ)
- * รายงานที่ออกด้วยโหมดนี้จะถูกประทับข้อความ "เอกสารพรีวิว" กำกับไว้เสมอ ไม่ใช่เอกสารทางการ
- * คืนค่า { scope: "sem1"|"full", preview: true|false } ถ้ากดยืนยัน, null ถ้ายกเลิก
+ * เปิด SweetAlert2 ให้เลือกโหมด "ดูตัวอย่าง (Preview)" ก่อนสร้าง PDF ทุกครั้ง (ทั้งรายบุคคล/รวมห้อง)
+ * ไม่มีตัวเลือก "รอบการออกรายงาน" อีกต่อไป เพราะเทมเพลตแสดงสถานะจริง ณ ตอนออกรายงานอัตโนมัติอยู่แล้ว
+ * โหมดพรีวิว = ประทับข้อความ "เอกสารพรีวิว" กำกับไว้ในไฟล์ (ใช้ตรวจสอบรูปแบบระหว่างพัฒนาระบบ ยังไม่ใช่เอกสารทางการ)
+ * คืนค่า { preview: true|false } ถ้ากดยืนยัน, null ถ้ายกเลิก
  */
 async function chooseReportOptions(title) {
-  const { value, isConfirmed } = await Swal.fire({
+  const { value: preview, isConfirmed } = await Swal.fire({
     title: title,
     html: `
-      <div class="text-left text-sm">
-        <label class="flex items-center gap-2 mb-2">
-          <input type="radio" name="pt06scope" value="sem1" checked> ภาคเรียนที่ 1 (รายงานระหว่างปี)
-        </label>
-        <label class="flex items-center gap-2 mb-3">
-          <input type="radio" name="pt06scope" value="full"> ภาคเรียนที่ 2 (รายงานฉบับสมบูรณ์ ทั้งปี)
-        </label>
-        <label class="flex items-start gap-2 border-t pt-3 text-gray-600">
-          <input type="checkbox" id="pt06previewCheck" class="mt-1">
-          <span>ดูตัวอย่าง (Preview) — ข้ามการตรวจสอบว่าส่งผลครบทุกวิชา แล้วประทับข้อความ "เอกสารพรีวิว" กำกับในไฟล์ (ใช้ตรวจสอบรูปแบบระหว่างพัฒนาระบบ ยังไม่ใช่เอกสารทางการ)</span>
-        </label>
-      </div>`,
+      <label class="flex items-start gap-2 text-left text-sm text-gray-600">
+        <input type="checkbox" id="pt06previewCheck" class="mt-1">
+        <span>ดูตัวอย่าง (Preview) — ประทับข้อความ "เอกสารพรีวิว" กำกับในไฟล์ (ใช้ตรวจสอบรูปแบบระหว่างพัฒนาระบบ ยังไม่ใช่เอกสารทางการ)</span>
+      </label>`,
     showCancelButton: true,
     confirmButtonText: "ออกรายงาน",
     cancelButtonText: "ยกเลิก",
     confirmButtonColor: "#268244",
     preConfirm: () => {
-      const scopeInput = document.querySelector('input[name="pt06scope"]:checked');
       const previewInput = document.getElementById("pt06previewCheck");
-      return { scope: scopeInput ? scopeInput.value : "sem1", preview: previewInput ? previewInput.checked : false };
+      return previewInput ? previewInput.checked : false;
     },
   });
-  return isConfirmed ? value : null;
+  return isConfirmed ? { preview: !!preview } : null;
 }
 
 function downloadPdfFromBase64(base64, fileName) {
@@ -99,7 +91,6 @@ async function generateStudentReport(userId, classId, studentId) {
       userId,
       classId,
       studentId,
-      reportScope: opts.scope,
       preview: opts.preview,
     });
     Swal.close();
@@ -136,7 +127,7 @@ async function generateClassReport(userId, classId) {
     didOpen: () => Swal.showLoading(),
   });
   try {
-    const result = await callApi("generateHomeroomClassReport", { userId, classId, reportScope: opts.scope, preview: opts.preview });
+    const result = await callApi("generateHomeroomClassReport", { userId, classId, preview: opts.preview });
     Swal.close();
     if (result.status === "success") {
       downloadPdfFromBase64(result.data.base64, result.data.fileName);
