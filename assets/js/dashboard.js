@@ -87,7 +87,8 @@ function progressChipHtml(p, componentsKey, colorMap) {
 
   // สถานะการส่งผลการเรียนแยกอิสระตามภาคเรียนที่ chip นี้กำลังแสดง (ไม่ใช่รวมทั้งปี)
   const isSubmitted = componentsKey === "semester1Components" ? p.isSubmittedSem1 : p.isSubmittedSem2;
-  const submitStatusHtml = isSubmitted    ? '<span class="text-[11px] text-green-600 font-medium whitespace-nowrap"><i class="fa-solid fa-circle-check mr-1"></i>ส่งผลการเรียนแล้ว</span>'
+  const submitStatusHtml = isSubmitted
+    ? '<span class="text-[11px] text-green-600 font-medium whitespace-nowrap"><i class="fa-solid fa-circle-check mr-1"></i>ส่งผลการเรียนแล้ว</span>'
     : '<span class="text-[11px] text-gray-400 whitespace-nowrap"><i class="fa-regular fa-circle mr-1"></i>ยังไม่ส่งผลการเรียน</span>';
 
   return `
@@ -118,18 +119,35 @@ function renderDashboard(role, data) {
   const container = document.getElementById("dashboard-content");
 
   const cardsHtml = data.cards
-    .map(
-      (c) => `
-    <div class="bg-white rounded-xl shadow p-5 flex items-center gap-4">
-      <div class="w-12 h-12 rounded-lg bg-wprimary-light text-wprimary flex items-center justify-center text-xl">
+    .map((c) => {
+      const hasSubjectList = Array.isArray(c.subjectList) && c.subjectList.length > 0;
+
+      const bodyHtml = hasSubjectList
+        ? `
+        <p class="text-xs text-gray-500 mb-1">${c.label}</p>
+        <div class="space-y-1.5">
+          ${c.subjectList
+            .map(
+              (s) => `
+            <div>
+              <p class="text-sm font-bold text-wsecondary leading-snug">${s.name}</p>
+              <p class="text-xs text-gray-500 leading-snug">${s.classes.join(", ")}</p>
+            </div>`
+            )
+            .join("")}
+        </div>`
+        : `
+        <p class="text-xs text-gray-500">${c.label}</p>
+        <p class="text-lg font-bold text-wsecondary">${c.value}</p>`;
+
+      return `
+    <div class="bg-white rounded-xl shadow p-5 flex ${hasSubjectList ? "items-start" : "items-center"} gap-4">
+      <div class="w-12 h-12 rounded-lg bg-wprimary-light text-wprimary flex items-center justify-center text-xl shrink-0">
         <i class="fa-solid ${c.icon}"></i>
       </div>
-      <div>
-        <p class="text-xs text-gray-500">${c.label}</p>
-        <p class="text-lg font-bold text-wsecondary">${c.value}</p>
-      </div>
-    </div>`
-    )
+      <div class="min-w-0">${bodyHtml}</div>
+    </div>`;
+    })
     .join("");
 
   const subjectColorMap = buildSubjectColorMap(data.progress);
