@@ -21,6 +21,10 @@ document.addEventListener("DOMContentLoaded", async function () {
   document.getElementById("teacherSearch").addEventListener("input", filterTeacherOptions);
   document.getElementById("teacherTableFilter").addEventListener("change", renderAssignmentTable);
   document.getElementById("assignForm").addEventListener("submit", handleSubmitAssign);
+  document.getElementById("editAssignForm").addEventListener("submit", handleSubmitEditAssign);
+  document.getElementById("edit-subjectId").addEventListener("change", () => {
+    renderEditClassOptions(document.getElementById("edit-academicYearId").value);
+  });
 });
 
 async function loadPageData() {
@@ -216,12 +220,143 @@ function renderAssignmentTable() {
       <td class="px-4 py-3 font-medium text-wsecondary">${r.teacher}</td>
       <td class="px-4 py-3 text-gray-600">${r.subject}</td>
       <td class="px-4 py-3 text-gray-600">${r.className}</td>
-      <td class="px-4 py-3 text-right">
+      <td class="px-4 py-3 text-right whitespace-nowrap">
+        <button onclick="openEditAssignModal('${r.id}')" class="text-wprimary hover:underline text-xs font-medium mr-3">แก้ไข</button>
         <button onclick="removeAssignment('${r.id}')" class="text-red-500 hover:underline text-xs font-medium">นำออก</button>
       </td>
     </tr>`
     )
     .join("");
+}
+
+function openEditAssignModal(teachingAssignmentId) {
+  const assignment = allAssignments.find((a) => String(a.TeachingAssignmentID) === String(teachingAssignmentId));
+  if (!assignment) return;
+
+  document.getElementById("edit-teachingAssignmentId").value = assignment.TeachingAssignmentID;
+  document.getElementById("edit-academicYearId").value = assignment.AcademicYearID;
+
+  const sortedTeachers = allTeachers.slice().sort((a, b) => a.fullName.localeCompare(b.fullName, "th"));
+  document.getElementById("edit-teacherUserId").innerHTML = sortedTeachers
+    .map((t) => `<option value="${t.userId}">${t.fullName}</option>`)
+    .join("");
+  document.getElementById("edit-teacherUserId").value = assignment.TeacherUserID;
+
+  const sortedSubjects = allSubjects
+    .slice()
+    .sort(
+      (a, b) =>
+        String(a.GradeLevel).localeCompare(String(b.GradeLevel), "th") ||
+        a.SubjectName.localeCompare(b.SubjectName, "th")
+    );
+  document.getElementById("edit-subjectId").innerHTML = sortedSubjects
+    .map((s) => `<option value="${s.SubjectID}">${s.SubjectName} (${s.GradeLevel})</option>`)
+    .join("");
+  document.getElementById("edit-subjectId").value = assignment.SubjectID;
+
+  renderEditClassOptions(assignment.AcademicYearID, assignment.ClassID);
+
+  document.getElementById("editAssignModal").classList.remove("hidden");
+}
+
+function closeEditAssignModal() {
+  document.getElementById("editAssignModal").classList.add("hidden");
+}
+
+function renderEditClassOptions(academicYearId, selectedClassId) {
+  const subjectId = document.getElementById("edit-subjectId").value;
+  const subject = allSubjects.find((s) => String(s.SubjectID) === String(subjectId));
+  const classSelect = document.getElementById("edit-classId");
+
+  if (!subject) {
+    classSelect.innerHTML = `<option value="">- เลือกวิชาก่อน -</option>`;
+    return;
+  }
+
+  const classesForGrade = allClasses.filter(
+    (c) => String(c.AcademicYearID) === String(academicYearId) && String(c.GradeLevel) === String(subject.GradeLevel)
+  );
+
+  if (classesForGrade.length === 0) {
+    classSelect.innerHTML = `<option value="">- ไม่พบห้องเรียนระดับชั้นนี้ -</option>`;
+    return;
+  }
+
+  classSelect.innerHTML = classesForGrade
+    .map((c) => `<option value="${c.ClassID}">${c.GradeLevel}/${c.RoomNumber}</option>`)
+    .join("");
+
+  if (selectedClassId) classSelect.value = selectedClassId;
+}
+
+async function handleSubmitEditAssign(e) {
+  e.preventDefault();
+
+  const teachingAssignmentId = document.getElementById("edit-teachingAssignmentId").value;
+  const academicYearId = document.getElementById("edit-academicYearId").value;
+  const teacherUserId = document.getElementById("edit-teacherUserId").value;
+  const subjectId = document.getElementById("edit-subjectId").value;
+  const classId = document.getElementById("edit-classId").value;
+
+  if (!teacherUserId || !subjectId || !classId) {
+    Swal.fire({ icon: "warning", title: "กรุณาเลือกข้อมูลให้ครบถ้วน", confirmButtonColor: "#268244" });
+    return;
+  }
+
+  const btn = document.getElementById("saveEditAssignBtn");
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึก...';
+
+  try {
+    let result = await callApi("updateTeachingAssignment", {
+      teachingAssignmentId,
+      academicYearId,
+      teacherUserId,
+      subjectId,
+      classId,
+    });
+
+    if (result.status === "confirm_required") {
+      const secondConfirm = await Swal.fire({
+        icon: "warning",
+        title: "มีคะแนนที่กรอกไว้แล้ว",
+        text: result.message,
+        showCancelButton: true,
+        confirmButtonText: "ดำเนินการต่อ",
+        cancelButtonText: "ยกเลิก",
+        confirmButtonColor: "#d33",
+      });
+
+      if (!secondConfirm.isConfirmed) {
+        btn.disabled = false;
+        btn.innerHTML = "บันทึก";
+        return;
+      }
+
+      result = await callApi("updateTeachingAssignment", {
+        teachingAssignmentId,
+        academicYearId,
+        teacherUserId,
+        subjectId,
+        classId,
+        force: true,
+      });
+    }
+
+    if (result.status === "success") {
+      closeEditAssignModal();
+      clearApiCache("getTeachingAssignmentsPageData");
+      await loadPageData();
+      Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+    } else {
+      Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+    }
+  } catch (err) {
+    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = "บันทึก";
+  }
 }
 
 async function removeAssignment(teachingAssignmentId) {
