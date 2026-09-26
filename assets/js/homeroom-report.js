@@ -205,7 +205,7 @@ function renderStudentReport(data, userId, classId, studentId) {
           (s) => `
     <tr class="border-b border-gray-100">
       <td class="px-4 py-3">
-        <div class="font-medium text-wsecondary">${s.subjectName}</div>
+        <div class="font-medium text-wsecondary">${s.subjectId} ${s.subjectName}</div>
         ${s.teacherName ? `<div class="text-xs text-gray-400 mt-0.5">${s.teacherName}</div>` : ""}
       </td>
       <td class="px-4 py-3 text-center text-gray-600">${s.credit}</td>
