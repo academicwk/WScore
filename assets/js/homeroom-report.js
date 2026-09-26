@@ -204,8 +204,10 @@ function renderStudentReport(data, userId, classId, studentId) {
         .map(
           (s) => `
     <tr class="border-b border-gray-100">
-      <td class="px-4 py-3 text-gray-600">${s.subjectGroup}</td>
-      <td class="px-4 py-3 font-medium text-wsecondary">${s.subjectName}</td>
+      <td class="px-4 py-3">
+        <div class="font-medium text-wsecondary">${s.subjectName}</div>
+        ${s.teacherName ? `<div class="text-xs text-gray-400 mt-0.5">${s.teacherName}</div>` : ""}
+      </td>
       <td class="px-4 py-3 text-center text-gray-600">${s.credit}</td>
       <td class="px-4 py-3 text-center">
         <div>${scoreText(s.semester1Total100)}</div>
@@ -220,7 +222,7 @@ function renderStudentReport(data, userId, classId, studentId) {
     </tr>`
         )
         .join("")
-    : `<tr><td colspan="7" class="text-center text-gray-400 py-6">ยังไม่มีรายวิชาที่มอบหมายให้ห้องนี้ในปีการศึกษานี้</td></tr>`;
+    : `<tr><td colspan="6" class="text-center text-gray-400 py-6">ยังไม่มีรายวิชาที่มอบหมายให้ห้องนี้ในปีการศึกษานี้</td></tr>`;
 
   document.getElementById("reportContent").innerHTML = `
     <div class="bg-white rounded-xl shadow p-5 mb-4">
@@ -248,7 +250,6 @@ function renderStudentReport(data, userId, classId, studentId) {
         <table class="w-full text-sm">
           <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
             <tr>
-              <th class="px-4 py-3 text-left">กลุ่มสาระ</th>
               <th class="px-4 py-3 text-left">รายวิชา</th>
               <th class="px-4 py-3 text-center">หน่วยกิต</th>
               <th class="px-4 py-3 text-center">ภาคเรียนที่ 1</th>
