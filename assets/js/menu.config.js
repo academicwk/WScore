@@ -117,6 +117,12 @@ const MENU_CONFIG = [
   },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    icon: "fa-medal",
+    label: "บันทึกผลกิจกรรมพัฒนาผู้เรียน",
+    href: "activity-results-manage.html",
+  },
+  {
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-file-lines",
     label: "พิมพ์เอกสาร (ปพ.1 / ปพ.3)",
     href: "documents.html",
