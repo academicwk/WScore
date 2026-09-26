@@ -218,10 +218,12 @@ function submitStatusBadge(isSubmitted) {
 }
 
 function renderStudentReport(data, classId, studentId) {
+  // กิจกรรมพัฒนาผู้เรียน: ประเมินรายปีเป็น ผ/มผ โดยนายทะเบียน ไม่มีคะแนน/ภาคเรียน จึงโชว์แค่ช่อง "ผลการเรียน" ช่องอื่นเป็น "-" ล้วน — 26 ก.ย. 2569
   const rowsHtml = data.subjects.length
     ? data.subjects
-        .map(
-          (s) => `
+        .map((s) => {
+          const isActivity = s.evaluationType === "ผ่าน-ไม่ผ่าน (ผ/มผ)";
+          return `
     <tr class="border-b border-gray-100">
       <td class="px-4 py-3">
         <div class="font-medium text-wsecondary">${s.subjectId} ${s.subjectName}</div>
@@ -229,17 +231,25 @@ function renderStudentReport(data, classId, studentId) {
       </td>
       <td class="px-4 py-3 text-center text-gray-600">${s.credit}</td>
       <td class="px-4 py-3 text-center">
-        <div>${scoreText(s.semester1Total100)}</div>
-        <div class="mt-0.5">${submitStatusBadge(s.isSubmittedSem1)}</div>
+        ${
+          isActivity
+            ? `<div>-</div>`
+            : `<div>${scoreText(s.semester1Total100)}</div><div class="mt-0.5">${submitStatusBadge(s.isSubmittedSem1)}</div>`
+        }
       </td>
       <td class="px-4 py-3 text-center">
-        <div>${scoreText(s.semester2Total100)}</div>
-        <div class="mt-0.5">${submitStatusBadge(s.isSubmittedSem2)}</div>
+        ${
+          isActivity
+            ? `<div>-</div>`
+            : `<div>${scoreText(s.semester2Total100)}</div><div class="mt-0.5">${submitStatusBadge(s.isSubmittedSem2)}</div>`
+        }
       </td>
-      <td class="px-4 py-3 text-center text-gray-600">${scoreText(s.yearScore100)}</td>
-      <td class="px-4 py-3 text-center font-medium text-wsecondary">${s.gradePoint !== null ? s.gradePoint.toFixed(1) : "-"}</td>
-    </tr>`
-        )
+      <td class="px-4 py-3 text-center text-gray-600">${isActivity ? "-" : scoreText(s.yearScore100)}</td>
+      <td class="px-4 py-3 text-center font-medium text-wsecondary">${
+        isActivity ? s.activityResult || "-" : s.gradePoint !== null ? s.gradePoint.toFixed(1) : "-"
+      }</td>
+    </tr>`;
+        })
         .join("")
     : `<tr><td colspan="6" class="text-center text-gray-400 py-6">ยังไม่มีรายวิชาที่มอบหมายให้ห้องนี้ในปีการศึกษานี้</td></tr>`;
 
