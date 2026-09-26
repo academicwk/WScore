@@ -130,7 +130,7 @@ function subjectListSectionHtml(subjects) {
     }
     rowsHtml += `
       <div class="flex items-center justify-between gap-3 py-1.5 border-b border-gray-50 last:border-0">
-        <span class="text-sm text-gray-700">${s.subjectName}</span>
+        <span class="text-sm text-gray-700">${s.subjectId} ${s.subjectName}</span>
         <span class="text-xs text-gray-400 whitespace-nowrap">${s.subjectType}</span>
       </div>`;
   });
