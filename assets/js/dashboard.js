@@ -18,7 +18,7 @@ document.addEventListener("DOMContentLoaded", function () {
 async function fetchDashboardData(role, userId) {
   const result = await callApi("getDashboardData", { role, userId });
   if (result.status !== "success") {
-    return { cards: [], progress: [], quickActions: [] };
+    return { cards: [], progress: [], quickActions: [], subjects: [] };
   }
   return result.data;
 }
@@ -115,6 +115,35 @@ function semesterProgressColumnHtml(semesterLabel, progress, componentsKey, colo
     </div>`;
 }
 
+// รายการชื่อรายวิชาที่ลงทะเบียนเรียนทั้งหมดของห้อง (data.subjects) แสดงเฉพาะกรณีมีข้อมูลส่งมา (ปัจจุบันมีเฉพาะ HOMEROOM_TEACHER)
+// เรียงลำดับมาจาก backend แล้ว (ตามกลุ่มสาระ) ฝั่งนี้แค่ใส่หัวข้อกลุ่มสาระคั่นเมื่อกลุ่มเปลี่ยน
+function subjectListSectionHtml(subjects) {
+  if (!Array.isArray(subjects) || subjects.length === 0) return "";
+
+  let currentGroup = null;
+  let rowsHtml = "";
+  subjects.forEach((s) => {
+    const groupLabel = s.subjectGroup || (s.subjectType === "กิจกรรมพัฒนาผู้เรียน" ? "กิจกรรมพัฒนาผู้เรียน" : "อื่นๆ");
+    if (groupLabel !== currentGroup) {
+      currentGroup = groupLabel;
+      rowsHtml += `<p class="text-xs font-semibold text-wprimary mt-3 first:mt-0">${groupLabel}</p>`;
+    }
+    rowsHtml += `
+      <div class="flex items-center justify-between gap-3 py-1.5 border-b border-gray-50 last:border-0">
+        <span class="text-sm text-gray-700">${s.subjectName}</span>
+        <span class="text-xs text-gray-400 whitespace-nowrap">${s.subjectType}</span>
+      </div>`;
+  });
+
+  return `
+    <div class="bg-white rounded-xl shadow p-5 mb-6">
+      <h2 class="text-sm font-semibold text-wsecondary mb-3">
+        <i class="fa-solid fa-book mr-1.5 text-wprimary"></i>รายวิชาที่ลงทะเบียนเรียน
+      </h2>
+      <div>${rowsHtml}</div>
+    </div>`;
+}
+
 function renderDashboard(role, data) {
   const container = document.getElementById("dashboard-content");
 
@@ -191,11 +220,16 @@ function renderDashboard(role, data) {
       </div>
     </div>`;
 
+  const subjectsSectionHtml = subjectListSectionHtml(data.subjects);
+
   container.innerHTML = `
     <!-- ส่วนที่ 1 : Summary Cards -->
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-${data.cards.length} gap-4 mb-6">
       ${cardsHtml}
     </div>
+
+    <!-- รายวิชาที่ลงทะเบียนเรียน (มีเฉพาะบาง Role ที่ backend ส่ง data.subjects มา) -->
+    ${subjectsSectionHtml}
 
     <!-- ส่วนที่ 2 : Progress & Charts -->
     ${progressSectionHtml}
