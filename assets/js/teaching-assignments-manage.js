@@ -16,10 +16,12 @@ document.addEventListener("DOMContentLoaded", async function () {
     renderClassCheckboxes();
     renderAssignmentTable();
   });
-  document.getElementById("f-teacherUserId").addEventListener("change", renderClassCheckboxes);
+  document.getElementById("f-teacherUserId").addEventListener("change", () => {
+    renderClassCheckboxes();
+    renderAssignmentTable();
+  });
   document.getElementById("f-subjectId").addEventListener("change", renderClassCheckboxes);
   document.getElementById("teacherSearch").addEventListener("input", filterTeacherOptions);
-  document.getElementById("teacherTableFilter").addEventListener("change", renderAssignmentTable);
   document.getElementById("assignForm").addEventListener("submit", handleSubmitAssign);
   document.getElementById("editAssignForm").addEventListener("submit", handleSubmitEditAssign);
   document.getElementById("edit-subjectId").addEventListener("change", () => {
@@ -49,8 +51,6 @@ async function loadPageData() {
   const sortedTeachers = allTeachers.slice().sort((a, b) => a.fullName.localeCompare(b.fullName, "th"));
   const teacherOptions = sortedTeachers.map((t) => `<option value="${t.userId}">${t.fullName}</option>`).join("");
   document.getElementById("f-teacherUserId").innerHTML = teacherOptions;
-  document.getElementById("teacherTableFilter").innerHTML =
-    `<option value="">- ครูผู้สอนทั้งหมด -</option>` + teacherOptions;
 
   const sortedSubjects = allSubjects
     .slice()
@@ -82,6 +82,7 @@ function filterTeacherOptions() {
     select.value = firstVisible.value;
   }
   renderClassCheckboxes();
+  renderAssignmentTable();
 }
 
 function teacherName(userId) {
@@ -184,7 +185,8 @@ function renderEmptyTable(message) {
 
 function renderAssignmentTable() {
   const yearId = document.getElementById("yearFilter").value;
-  const teacherFilterId = document.getElementById("teacherTableFilter").value;
+  // กรองตามครูที่เลือกไว้ในข้อ 1. ครูประจำวิชา ของฟอร์มด้านบนโดยตรง ไม่ต้องมีตัวเลือกกรองแยกต่างหากอีก — 26 ก.ย. 2569
+  const teacherFilterId = document.getElementById("f-teacherUserId").value;
 
   let rows = allAssignments.filter((a) => String(a.AcademicYearID) === String(yearId));
   if (teacherFilterId) {
