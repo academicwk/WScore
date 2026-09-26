@@ -60,7 +60,7 @@ async function loadPageData() {
         a.SubjectName.localeCompare(b.SubjectName, "th")
     );
   document.getElementById("f-subjectId").innerHTML = sortedSubjects
-    .map((s) => `<option value="${s.SubjectID}">${s.SubjectName} (${s.GradeLevel})</option>`)
+    .map((s) => `<option value="${s.SubjectID}">${s.SubjectID} ${s.SubjectName} (${s.GradeLevel})</option>`)
     .join("");
 
   renderClassCheckboxes();
@@ -91,7 +91,7 @@ function teacherName(userId) {
 
 function subjectName(subjectId) {
   const found = allSubjects.find((s) => String(s.SubjectID) === String(subjectId));
-  return found ? found.SubjectName : subjectId;
+  return found ? `${found.SubjectID} ${found.SubjectName}` : subjectId;
 }
 
 function renderClassCheckboxes() {
@@ -250,7 +250,7 @@ function openEditAssignModal(teachingAssignmentId) {
         a.SubjectName.localeCompare(b.SubjectName, "th")
     );
   document.getElementById("edit-subjectId").innerHTML = sortedSubjects
-    .map((s) => `<option value="${s.SubjectID}">${s.SubjectName} (${s.GradeLevel})</option>`)
+    .map((s) => `<option value="${s.SubjectID}">${s.SubjectID} ${s.SubjectName} (${s.GradeLevel})</option>`)
     .join("");
   document.getElementById("edit-subjectId").value = assignment.SubjectID;
 
