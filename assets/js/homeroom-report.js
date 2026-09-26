@@ -1,110 +1,36 @@
 /**
- * W-Score : ออกรายงาน ปถ.06 (สำหรับนายทะเบียน / ผู้ช่วยนายทะเบียน)
- * ย้ายมาจากฝั่งครูประจำชั้นเดิม (homeroom-report.js) — นายทะเบียนเลือกได้ทุกปีการศึกษา/ทุกห้องเรียน/ทุกคนในโรงเรียน ไม่จำกัดเฉพาะห้องที่ตนดูแล
- * เทมเพลตมีคอลัมน์แยกภาคเรียนที่ 1/ภาคเรียนที่ 2/สรุปผลปลายปีอยู่ในตารางเดียวกันแล้ว
- * รายงานจึงแสดง "สถานะจริง ณ ตอนออกรายงาน" เสมอ (คอลัมน์ไหนยังไม่ส่งผลจะเป็น "-" อัตโนมัติ) ไม่มีโหมดพรีวิวอีกต่อไป (ตัดออกตามที่ผู้ใช้ต้องการ)
- * ออกได้ทั้งรายบุคคลและรวมทั้งห้อง (รวมห้อง = ไฟล์ PDF เดียว นักเรียน 1 คน = 1 หน้า)
+ * W-Score : ออกรายงาน ปถ.06 (สำหรับครูประจำชั้น)
+ * แสดงผลการเรียนทุกวิชาของนักเรียนรายบุคคลที่เลือก (ในห้องที่ตนเองเป็นครูประจำชั้น)
+ * เทมเพลตเวอร์ชันนี้มีคอลัมน์แยกภาคเรียนที่ 1/ภาคเรียนที่ 2/สรุปผลปลายปีอยู่ในตารางเดียวกันแล้ว
+ * รายงานจึงแสดง "สถานะจริง ณ ตอนออกรายงาน" เสมอ (คอลัมน์ไหนยังไม่ส่งผลจะเป็น "-" อัตโนมัติ) ไม่ต้องเลือกรอบการออกรายงานอีกต่อไป
+ * ทั้งรายบุคคลและรวมทั้งห้อง (รวมห้อง = ไฟล์ PDF เดียว นักเรียน 1 คน = 1 หน้า) ไม่มีโหมดพรีวิวอีกต่อไป (ตัดออกตามที่ผู้ใช้ต้องการ)
  */
 
-let allYears = [];
-let rawClassesData = [];
+let currentClasses = [];
+let currentStudents = [];
 let currentClassId = null;
 
-document.addEventListener("DOMContentLoaded", async function () {
-  await loadPageData();
+document.addEventListener("DOMContentLoaded", function () {
+  const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
+  if (!userData) return;
 
-  document.getElementById("yearFilter").addEventListener("change", () => {
-    renderClassOptionsForYear();
-    clearStudentSelect();
-    clearReport();
-  });
   document.getElementById("classFilter").addEventListener("change", function () {
     currentClassId = this.value;
-    if (!currentClassId) {
-      clearStudentSelect();
-      clearReport();
-      return;
-    }
-    loadClassStudents(currentClassId);
+    loadClassData(userData.userId, currentClassId);
   });
   document.getElementById("studentFilter").addEventListener("change", function () {
     if (!this.value) {
       clearReport();
       return;
     }
-    loadStudentReport(currentClassId, this.value);
+    loadStudentReport(userData.userId, currentClassId, this.value);
   });
   document.getElementById("printClassBtn").addEventListener("click", function () {
-    generateClassReport(currentClassId);
+    generateClassReport(userData.userId, currentClassId);
   });
+
+  loadClassData(userData.userId, null);
 });
-
-async function loadPageData() {
-  const result = await callApi("getEnrollmentsPageData");
-  if (result.status !== "success") return;
-
-  allYears = result.data.academicYears;
-  rawClassesData = result.data.classes;
-
-  const yearOptions = allYears.map((y) => `<option value="${y.AcademicYearID}">${y.Year}</option>`).join("");
-  document.getElementById("yearFilter").innerHTML = yearOptions;
-
-  const current = allYears.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE");
-  if (current) document.getElementById("yearFilter").value = current.AcademicYearID;
-
-  renderClassOptionsForYear();
-}
-
-function renderClassOptionsForYear() {
-  const yearId = document.getElementById("yearFilter").value;
-  const classesInYear = rawClassesData.filter((c) => String(c.AcademicYearID) === String(yearId));
-
-  const options = classesInYear
-    .map((c) => `<option value="${c.ClassID}">${c.GradeLevel}/${c.RoomNumber}</option>`)
-    .join("");
-
-  document.getElementById("classFilter").innerHTML = `<option value="">- เลือกห้องเรียน -</option>` + options;
-  currentClassId = null;
-}
-
-function clearStudentSelect() {
-  document.getElementById("studentFilter").innerHTML = `<option value="">- เลือกนักเรียน -</option>`;
-}
-
-function clearReport() {
-  document.getElementById("reportContent").innerHTML = `
-    <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">
-      กรุณาเลือกปีการศึกษา ห้องเรียน และนักเรียน เพื่อดูผลการเรียนทุกวิชา
-    </div>`;
-}
-
-async function loadClassStudents(classId) {
-  const studentSelect = document.getElementById("studentFilter");
-  studentSelect.innerHTML = `<option value="">- กำลังโหลดข้อมูล... -</option>`;
-  clearReport();
-
-  try {
-    const result = await callApi("getEnrollmentsByClass", { classId });
-
-    if (result.status !== "success") {
-      studentSelect.innerHTML = `<option value="">- เกิดข้อผิดพลาด -</option>`;
-      return;
-    }
-
-    if (result.data.length === 0) {
-      studentSelect.innerHTML = `<option value="">- ไม่มีนักเรียนในห้องนี้ -</option>`;
-      return;
-    }
-
-    studentSelect.innerHTML =
-      `<option value="">- เลือกนักเรียน -</option>` +
-      result.data
-        .map((s) => `<option value="${s.studentId}">เลขที่ ${s.studentNumber} - ${s.fullName}</option>`)
-        .join("");
-  } catch (err) {
-    studentSelect.innerHTML = `<option value="">- เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ -</option>`;
-  }
-}
 
 function downloadPdfFromBase64(base64, fileName) {
   const byteChars = atob(base64);
@@ -125,14 +51,14 @@ function downloadPdfFromBase64(base64, fileName) {
   URL.revokeObjectURL(url);
 }
 
-async function generateStudentReport(classId, studentId) {
+async function generateStudentReport(userId, classId, studentId) {
   Swal.fire({
     title: "กำลังสร้างรายงาน...",
     allowOutsideClick: false,
     didOpen: () => Swal.showLoading(),
   });
   try {
-    const result = await callApi("generatePt06StudentReport", { classId, studentId });
+    const result = await callApi("generateHomeroomStudentReport", { userId, classId, studentId });
     Swal.close();
     if (result.status === "success") {
       downloadPdfFromBase64(result.data.base64, result.data.fileName);
@@ -146,7 +72,7 @@ async function generateStudentReport(classId, studentId) {
   }
 }
 
-async function generateClassReport(classId) {
+async function generateClassReport(userId, classId) {
   if (!classId) {
     Swal.fire({ icon: "warning", title: "กรุณาเลือกห้องเรียนก่อน", confirmButtonColor: "#268244" });
     return;
@@ -169,7 +95,7 @@ async function generateClassReport(classId) {
     didOpen: () => Swal.showLoading(),
   });
   try {
-    const result = await callApi("generatePt06ClassReport", { classId });
+    const result = await callApi("generateHomeroomClassReport", { userId, classId });
     Swal.close();
     if (result.status === "success") {
       downloadPdfFromBase64(result.data.base64, result.data.fileName);
@@ -189,19 +115,74 @@ async function generateClassReport(classId) {
   }
 }
 
-async function loadStudentReport(classId, studentId) {
+async function loadClassData(userId, classId) {
+  const studentSelect = document.getElementById("studentFilter");
+  studentSelect.innerHTML = `<option value="">- กำลังโหลดข้อมูล... -</option>`;
+  clearReport();
+
+  try {
+    const result = await callApi("getHomeroomSummaryPageData", { userId, classId });
+
+    if (result.status !== "success") {
+      studentSelect.innerHTML = `<option value="">- เกิดข้อผิดพลาด -</option>`;
+      return;
+    }
+
+    renderClassFilter(result.data);
+    currentClassId = result.data.selectedClassId;
+    currentStudents = result.data.students;
+
+    if (currentStudents.length === 0) {
+      studentSelect.innerHTML = `<option value="">- ไม่มีนักเรียนในห้องนี้ -</option>`;
+      return;
+    }
+
+    studentSelect.innerHTML =
+      `<option value="">- เลือกนักเรียน -</option>` +
+      currentStudents
+        .map((s) => `<option value="${s.studentId}">เลขที่ ${s.studentNumber} - ${s.fullName}</option>`)
+        .join("");
+  } catch (err) {
+    studentSelect.innerHTML = `<option value="">- เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ -</option>`;
+  }
+}
+
+function renderClassFilter(data) {
+  currentClasses = data.classOptions;
+  const wrap = document.getElementById("classFilterWrap");
+  const select = document.getElementById("classFilter");
+
+  if (currentClasses.length <= 1) {
+    wrap.classList.add("hidden");
+    return;
+  }
+
+  wrap.classList.remove("hidden");
+  select.innerHTML = currentClasses
+    .map((c) => `<option value="${c.classId}" ${c.classId === data.selectedClassId ? "selected" : ""}>${c.label}</option>`)
+    .join("");
+}
+
+function clearReport() {
+  document.getElementById("reportContent").innerHTML = `
+    <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">
+      กรุณาเลือกนักเรียน เพื่อดูผลการเรียนทุกวิชา
+    </div>`;
+}
+
+async function loadStudentReport(userId, classId, studentId) {
   const content = document.getElementById("reportContent");
   content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>`;
 
   try {
-    const result = await callApi("getPt06StudentReportData", { classId, studentId });
+    const result = await callApi("getHomeroomStudentReportData", { userId, classId, studentId });
 
     if (result.status !== "success") {
       content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${result.message}</div>`;
       return;
     }
 
-    renderStudentReport(result.data, classId, studentId);
+    renderStudentReport(result.data, userId, classId, studentId);
   } catch (err) {
     content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</div>`;
   }
@@ -217,7 +198,7 @@ function submitStatusBadge(isSubmitted) {
     : `<span class="text-[11px] text-gray-400"><i class="fa-regular fa-circle mr-1"></i>ยังไม่ส่ง</span>`;
 }
 
-function renderStudentReport(data, classId, studentId) {
+function renderStudentReport(data, userId, classId, studentId) {
   const rowsHtml = data.subjects.length
     ? data.subjects
         .map(
@@ -282,6 +263,6 @@ function renderStudentReport(data, classId, studentId) {
     </div>`;
 
   document.getElementById("printStudentBtn").addEventListener("click", function () {
-    generateStudentReport(classId, studentId);
+    generateStudentReport(userId, classId, studentId);
   });
 }
