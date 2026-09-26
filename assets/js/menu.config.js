@@ -117,6 +117,12 @@ const MENU_CONFIG = [
   },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    icon: "fa-file-pdf",
+    label: "ออกรายงาน ปถ.06",
+    href: "pt06-report.html",
+  },
+  {
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
     icon: "fa-file-lines",
     label: "พิมพ์เอกสาร (ปพ.1 / ปพ.3)",
     href: "documents.html",
