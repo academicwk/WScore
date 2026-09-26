@@ -40,20 +40,8 @@ const MENU_CONFIG = [
 },
   {
     roles: ["HOMEROOM_TEACHER"],
-    icon: "fa-chalkboard-user",
-    label: "สรุปข้อมูลประจำชั้น",
-    href: "homeroom.html",
-  },
-  {
-    roles: ["HOMEROOM_TEACHER"],
-    icon: "fa-user-check",
-    label: "เวลาเรียน / กิจกรรมโฮมรูม",
-    href: "homeroom-activity.html",
-  },
-  {
-    roles: ["HOMEROOM_TEACHER"],
     icon: "fa-star",
-    label: "คุณลักษณะ / อ่านคิดวิเคราะห์",
+    label: "คุณลักษณะ/คิดวิเคราะห์อ่านเขียน",
     href: "homeroom-evaluation.html",
   },
   {
@@ -61,6 +49,12 @@ const MENU_CONFIG = [
     icon: "fa-file-pdf",
     label: "ออกรายงาน ปถ.06",
     href: "homeroom-report.html",
+  },
+  {
+    roles: ["HOMEROOM_TEACHER"],
+    icon: "fa-file-pdf",
+    label: "ออกรายงาน ปถ.07",
+    href: "pt07-report.html",
   },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
