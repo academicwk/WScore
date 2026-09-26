@@ -63,7 +63,7 @@ function renderSubjectOptionsForYear() {
       }
     });
 
-  const options = subjectsInYear.map((a) => `<option value="${a.subjectId}">${a.subjectName}</option>`).join("");
+  const options = subjectsInYear.map((a) => `<option value="${a.subjectId}">${a.subjectId} ${a.subjectName}</option>`).join("");
 
   document.getElementById("subjectFilter").innerHTML = `<option value="">- เลือกวิชา -</option>` + options;
   renderClassOptionsForSubject();
@@ -121,7 +121,7 @@ async function loadEntryIfReady() {
   currentStudents = result.data.students;
   isPeriodClosed = result.data.isPeriodOpen === false;
   isEntryLocked = !!result.data.isSubmitted || isPeriodClosed;
-  
+
   currentScores = {};
   (result.data.scores || []).forEach((sc) => {
     const key = scoreKey(sc.StudentID, sc.ComponentID, sc.SubComponentID);
