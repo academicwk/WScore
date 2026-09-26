@@ -58,7 +58,7 @@ function renderSubjectOptionsForYear() {
       }
     });
 
-  const options = subjectsInYear.map((a) => `<option value="${a.subjectId}">${a.subjectName}</option>`).join("");
+  const options = subjectsInYear.map((a) => `<option value="${a.subjectId}">${a.subjectId} ${a.subjectName}</option>`).join("");
 
   document.getElementById("subjectFilter").innerHTML = `<option value="">- เลือกวิชา -</option>` + options;
   renderClassOptionsForSubject();
@@ -216,6 +216,7 @@ function renderFinalizeTable() {
       </div>
     </div>`;
 }
+
 async function submitFinalResults(semester) {
   const confirmResult = await Swal.fire({
     icon: "question",
@@ -268,7 +269,7 @@ async function runFinalizeAction(action, semester, loadingText, successText) {
       semester,
       userId: userData ? userData.userId : "",
     });
-    
+
     if (result.status === "success") {
       Swal.fire({ icon: "success", title: successText, confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
       await loadFinalizeIfReady();
