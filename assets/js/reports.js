@@ -9,8 +9,21 @@ let gpaxChartInstance = null;
 let submissionChartInstance = null;
 let achievementChartInstance = null;
 
-document.addEventListener("DOMContentLoaded", async function () {
+// เผื่อกรณีโหลดไลบรารี Chart.js จาก CDN ไม่สำเร็จ (เช่น เครือข่ายโรงเรียนบล็อก CDN) จะได้ไม่ทำให้ทั้งหน้าใช้งานไม่ได้
+// การ์ดสรุป/ตารางยังคงแสดงผลได้ตามปกติ เว้นแต่ส่วนกราฟที่จะซ่อนไปแทน
+const CHART_AVAILABLE = typeof Chart !== "undefined";
+if (CHART_AVAILABLE) {
   Chart.defaults.font.family = "Sarabun, sans-serif";
+}
+
+document.addEventListener("DOMContentLoaded", async function () {
+  if (!CHART_AVAILABLE) {
+    document.querySelectorAll("canvas").forEach((c) => {
+      c.closest("div").innerHTML =
+        '<p class="text-xs text-gray-400 text-center py-10">ไม่สามารถโหลดไลบรารีสร้างกราฟได้ (เครือข่ายอาจบล็อก CDN) กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต</p>';
+    });
+  }
+
   await loadReportData("");
 
   document.getElementById("gradeLevelFilter").addEventListener("change", function () {
@@ -84,6 +97,7 @@ function renderSummaryCards(cards) {
 }
 
 function renderGpaxChart(rows) {
+  if (!CHART_AVAILABLE) return;
   const ctx = document.getElementById("gpaxChart").getContext("2d");
   if (gpaxChartInstance) gpaxChartInstance.destroy();
   gpaxChartInstance = new Chart(ctx, {
@@ -110,6 +124,7 @@ function renderGpaxChart(rows) {
 }
 
 function renderSubmissionChart(progress) {
+  if (!CHART_AVAILABLE) return;
   const ctx = document.getElementById("submissionChart").getContext("2d");
   if (submissionChartInstance) submissionChartInstance.destroy();
   submissionChartInstance = new Chart(ctx, {
@@ -144,6 +159,7 @@ function renderSubmissionChart(progress) {
 }
 
 function renderAchievementChart(rows) {
+  if (!CHART_AVAILABLE) return;
   const ctx = document.getElementById("achievementChart").getContext("2d");
   if (achievementChartInstance) achievementChartInstance.destroy();
   achievementChartInstance = new Chart(ctx, {
