@@ -91,18 +91,43 @@
         <span>หน้าหลัก</span>
       </a>`;
 
-    const menuLinks = items
-      .map(
-        (item) => `
+    // เมนูที่ไม่มี field "group" (roles อื่นที่มีเมนูน้อยอยู่แล้ว) แสดงแบบเดิม ไม่จัดกลุ่ม
+    const linkHtml = (item) => `
       <a href="${item.href}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
-          currentPage === item.href
-            ? "bg-wprimary-light text-wprimary"
-            : "text-gray-600 hover:bg-gray-100"
-        }">
+        currentPage === item.href
+          ? "bg-wprimary-light text-wprimary"
+          : "text-gray-600 hover:bg-gray-100"
+      }">
         <i class="fa-solid ${item.icon} w-5 text-center"></i>
         <span>${item.label}</span>
-      </a>`
-      )
+      </a>`;
+
+    const ungroupedItems = items.filter((item) => !item.group);
+    const menuLinks = ungroupedItems.map(linkHtml).join("");
+
+    // เมนูที่มี field "group" (เช่น ฝั่งนายทะเบียน) จัดเป็นกลุ่มพับ/กางได้ ลดความรกของเมนูที่มีจำนวนมาก (27 ก.ย. 2569)
+    // เรียงลำดับกลุ่มตามลำดับที่กลุ่มปรากฏครั้งแรกใน MENU_CONFIG กลุ่มที่มีหน้าปัจจุบันอยู่จะกางไว้ให้อัตโนมัติ กลุ่มอื่นพับไว้ก่อน
+    const groupNames = [];
+    items.forEach((item) => {
+      if (item.group && groupNames.indexOf(item.group) === -1) groupNames.push(item.group);
+    });
+
+    const groupedHtml = groupNames
+      .map((groupName, idx) => {
+        const groupItems = items.filter((item) => item.group === groupName);
+        const isActiveGroup = groupItems.some((item) => item.href === currentPage);
+        const groupId = "sidebarGroup" + idx;
+        return `
+        <div class="pt-1">
+          <button type="button" class="sidebar-group-toggle w-full flex items-center justify-between gap-2 px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide hover:text-gray-600" data-target="${groupId}">
+            <span>${groupName}</span>
+            <i class="fa-solid fa-chevron-down text-[10px] transition-transform ${isActiveGroup ? "" : "-rotate-90"}"></i>
+          </button>
+          <div id="${groupId}" class="space-y-1 ${isActiveGroup ? "" : "hidden"}">
+            ${groupItems.map(linkHtml).join("")}
+          </div>
+        </div>`;
+      })
       .join("");
 
     document.getElementById("app-sidebar").innerHTML = `
@@ -111,9 +136,18 @@
         <nav class="p-3 space-y-1">
           ${homeLink}
           ${menuLinks}
+          ${groupedHtml}
         </nav>
       </aside>
     `;
+
+    // ผูก event เปิด/ปิดกลุ่มเมนู (ต้องผูกใหม่ทุกครั้งเพราะ innerHTML ถูกเขียนทับใหม่ด้านบน)
+    document.querySelectorAll(".sidebar-group-toggle").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        document.getElementById(this.dataset.target).classList.toggle("hidden");
+        this.querySelector("i").classList.toggle("-rotate-90");
+      });
+    });
   }
 
   function bindEvents() {
