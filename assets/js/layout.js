@@ -77,7 +77,11 @@
 
     const items = MENU_CONFIG.filter((item) => item.roles.includes(currentRole));
 
-    const homeLink = `
+    // บทบาทผู้อำนวยการสถานศึกษา: ไม่ต้องมีเมนู "หน้าหลัก" มีเมนูเดียวคือ "รายงานสรุปผู้บริหาร" (27 ก.ย. 2569)
+    const homeLink =
+      currentRole === "DIRECTOR"
+        ? ""
+        : `
       <a href="dashboard.html" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
         currentPage === "dashboard.html"
           ? "bg-wprimary-light text-wprimary"
@@ -135,7 +139,8 @@
     if (roleSwitcher) {
       roleSwitcher.addEventListener("change", function () {
         sessionStorage.setItem("wscore_current_role", this.value);
-        window.location.href = "dashboard.html";
+        // ผู้อำนวยการสถานศึกษาไม่มีเมนู "หน้าหลัก" แล้ว สลับมาบทบาทนี้เมื่อไหร่ให้พาไปหน้า "รายงานสรุปผู้บริหาร" ตรงๆ เลย (27 ก.ย. 2569)
+        window.location.href = this.value === "DIRECTOR" ? "reports.html" : "dashboard.html";
       });
     }
 
