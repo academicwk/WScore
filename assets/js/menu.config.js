@@ -56,77 +56,130 @@ const MENU_CONFIG = [
     label: "ออกรายงาน ปถ.07",
     href: "pt07-report.html",
   },
+  // ===== นายทะเบียน/ผู้ช่วยนายทะเบียน: จัดกลุ่มเมนูด้วย field "group" (27 ก.ย. 2569) =====
+  // เมนูที่ไม่มี field "group" จะแสดงแบบเดิม (ไม่จัดกลุ่ม) — ใช้กับ role อื่นที่มีเมนูน้อยอยู่แล้วด้านล่าง
+
+  // กลุ่ม "การตั้งค่า"
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "การตั้งค่า",
     icon: "fa-calendar-days",
     label: "ตั้งค่าปีการศึกษา",
     href: "settings-academic-year.html",
   },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "การตั้งค่า",
     icon: "fa-clock",
     label: "ตั้งเวลาบันทึกคะแนน",
     href: "settings-grading-period.html",
   },
+
+  // กลุ่ม "จัดการข้อมูล"
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "จัดการข้อมูล",
     icon: "fa-chalkboard",
     label: "จัดการห้องเรียน",
     href: "classes-manage.html",
   },
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "จัดการข้อมูล",
     icon: "fa-people-group",
     label: "จัดนักเรียนเข้าห้องเรียน",
     href: "enrollments-manage.html",
   },
-
-    {
+  {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "จัดการข้อมูล",
     icon: "fa-user-graduate",
     label: "จัดการข้อมูลนักเรียน",
     href: "students-manage.html",
   },
-
-
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "จัดการข้อมูล",
     icon: "fa-book",
     label: "จัดการหลักสูตร/รายวิชา",
     href: "subjects-manage.html",
   },
-
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "จัดการข้อมูล",
     icon: "fa-chalkboard-user",
     label: "จัดการมอบหมายการสอน",
     href: "teaching-assignments-manage.html",
   },
 
+  // กลุ่ม "บันทึกผลการประเมิน"
   {
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
-    icon: "fa-clipboard-check",
-    label: "ตรวจสอบ/อนุมัติผลการเรียน",
-    href: "grades-approve.html",
+    group: "บันทึกผลการประเมิน",
+    icon: "fa-medal",
+    label: "กิจกรรมพัฒนาผู้เรียน",
+    href: "activity-results-manage.html",
   },
   {
+    // ยังไม่ได้สร้างหน้านี้ (จะทำในอนาคต) — 27 ก.ย. 2569
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "บันทึกผลการประเมิน",
+    icon: "fa-pen-nib",
+    label: "การอ่าน คิดวิเคราะห์และเขียน",
+    href: "reading-analysis-manage.html",
+  },
+  {
+    // ยังไม่ได้สร้างหน้านี้ (จะทำในอนาคต) — 27 ก.ย. 2569
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "บันทึกผลการประเมิน",
+    icon: "fa-star",
+    label: "คุณลักษณะอันพึงประสงค์",
+    href: "desirable-characteristics-manage.html",
+  },
+
+  // กลุ่ม "เอกสารทางการศึกษา"
+  {
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "เอกสารทางการศึกษา",
     icon: "fa-file-pdf",
     label: "ออกรายงาน ปถ.06",
     href: "pt06-report.html",
   },
   {
+    // ยังไม่ได้สร้างหน้านี้ (จะทำในอนาคต) — เดิมรวมกับ ปพ.3 อยู่ในเมนู "พิมพ์เอกสาร (ปพ.1/ปพ.3)" แยกออกมาตามที่ผู้ใช้ต้องการ (27 ก.ย. 2569)
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
-    icon: "fa-medal",
-    label: "บันทึกผลกิจกรรมพัฒนาผู้เรียน",
-    href: "activity-results-manage.html",
+    group: "เอกสารทางการศึกษา",
+    icon: "fa-file-lines",
+    label: "ออกเอกสาร ปพ.1",
+    href: "pp1-document.html",
   },
   {
+    // ยังไม่ได้สร้างหน้านี้ (จะทำในอนาคต) — 27 ก.ย. 2569
     roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "เอกสารทางการศึกษา",
     icon: "fa-file-lines",
-    label: "พิมพ์เอกสาร (ปพ.1 / ปพ.3)",
-    href: "documents.html",
+    label: "ออกเอกสาร ปพ.3",
+    href: "pp3-document.html",
   },
+
+  // กลุ่ม "ตรวจสอบข้อมูล"
+  {
+    // ยังไม่ได้สร้างหน้านี้ (จะทำในอนาคต) — 27 ก.ย. 2569
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "ตรวจสอบข้อมูล",
+    icon: "fa-magnifying-glass",
+    label: "ตรวจสอบผลการเรียน",
+    href: "grades-check.html",
+  },
+  {
+    // ยังไม่ได้สร้างหน้านี้ (จะทำในอนาคต) — เดิมรวมกับ "ตรวจสอบ" อยู่ในเมนูเดียว แยกออกมาตามที่ผู้ใช้ต้องการ (27 ก.ย. 2569)
+    roles: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+    group: "ตรวจสอบข้อมูล",
+    icon: "fa-clipboard-check",
+    label: "อนุมัติผลการเรียน",
+    href: "grades-approve.html",
+  },
+
   {
     roles: ["DIRECTOR"],
     icon: "fa-chart-pie",
