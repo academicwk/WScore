@@ -21,7 +21,16 @@
 
 <link rel="stylesheet" href="assets/css/style.css">
 </head>
-<body class="font-sans min-h-screen flex items-center justify-center bg-wsecondary p-4">
+<body class="font-sans min-h-screen flex items-center justify-center bg-wsecondary bg-cover bg-center bg-no-repeat p-4"
+      style="background-image: url('assets/img/login-bg.jpg');">
+  <!--
+    ภาพพื้นหลังหน้า Login: อัพโหลดไฟล์ภาพขึ้น GitHub ที่ตำแหน่ง assets/img/login-bg.jpg (ชื่อไฟล์ต้องตรงเป๊ะ) ระบบจะใช้เป็นพื้นหลังให้อัตโนมัติ
+    ถ้ายังไม่มีไฟล์นี้ (หรือลบออก) จะกลับไปใช้สีพื้นหลังเดิม (bg-wsecondary) แทนโดยอัตโนมัติ ไม่ต้องแก้โค้ดส่วนอื่นเพิ่ม
+    แนะนำภาพแนวนอน ขนาดไม่เกิน ~500KB เพื่อให้หน้าโหลดเร็ว
+  -->
+
+  <!-- ชั้นสีทับภาพพื้นหลัง (เพิ่มเข้ามาพร้อมภาพพื้นหลัง) ให้การ์ด Login อ่านง่ายเสมอไม่ว่าภาพพื้นหลังจะสว่าง/มืด/มีรายละเอียดมากแค่ไหน -->
+  <div class="fixed inset-0 bg-wsecondary/60 pointer-events-none"></div>
 
   <!-- พื้นหลังตกแต่ง -->
   <div class="fixed inset-0 overflow-hidden pointer-events-none">
