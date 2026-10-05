@@ -3,7 +3,8 @@
  * บันทึกคะแนน 4 ด้าน (ภาษาไทย/คณิตศาสตร์/ภาษาอังกฤษ/เสริมประสบการณ์) + ความเห็นครูประจำชั้น 4 ด้าน แยกรายภาคเรียน
  * ไม่คำนวณคะแนนรวม/ค่าเฉลี่ย
  *
- * บันทึกอัตโนมัติรายแถว: แก้ช่องคะแนนแล้วออกจากช่อง (หรือกดปุ่ม "บันทึก" ใน Modal ความเห็น) -> ส่งเฉพาะนักเรียนคนนั้นไปบันทึกทันที
+ * คะแนน: พิมพ์/วางหลายแถวได้ (copy จาก Excel/Sheets) แล้วกดปุ่ม "บันทึกคะแนน" -> ส่งเฉพาะแถวที่แก้ไขในคำขอเดียว
+ * ความเห็น: กดปุ่ม "บันทึก" ใน Modal -> บันทึกนักเรียนคนนั้นทันที
  * ปีการศึกษาที่ผ่านมาดูได้อย่างเดียว แก้ไขได้เฉพาะปีการศึกษาปัจจุบัน
  */
 
@@ -29,6 +30,9 @@ let pt12SaveChain = Promise.resolve(); // คิวบันทึก (ทีล
 let pt12Pending = 0; // จำนวนคำขอบันทึกที่ยังค้างอยู่
 let pt12Failed = new Set(); // นักเรียนที่บันทึกไม่สำเร็จและยังไม่ได้ลองใหม่
 let pt12ModalStudentId = null;
+let pt12Dirty = new Set(); // นักเรียนที่แก้ไขคะแนนแล้วแต่ยังไม่ได้บันทึก
+let pt12Version = {}; // ตัวนับการแก้ไขรายคน (กันล้างสถานะ "ยังไม่บันทึก" ผิดเมื่อมีการแก้ซ้ำระหว่างรอบันทึก)
+let pt12Inputs = {}; // { studentId: { thai: input, ... } }
 
 function escapeHtml(value) {
   return String(value === null || value === undefined ? "" : value)
@@ -48,7 +52,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // เตือนก่อนปิด/รีเฟรชหน้า ถ้ายังมีรายการที่กำลังบันทึกอยู่หรือบันทึกไม่สำเร็จ
   window.addEventListener("beforeunload", function (e) {
-    if (pt12Pending > 0 || pt12Failed.size > 0) {
+    if (pt12Pending > 0 || pt12Failed.size > 0 || pt12Dirty.size > 0) {
       e.preventDefault();
       e.returnValue = "";
     }
@@ -62,11 +66,11 @@ document.addEventListener("DOMContentLoaded", function () {
 async function reloadFromFilters() {
   await pt12SaveChain;
 
-  if (pt12Failed.size > 0) {
+  if (pt12Failed.size > 0 || pt12Dirty.size > 0) {
     const confirmResult = await Swal.fire({
       icon: "warning",
-      title: "มีรายการที่บันทึกไม่สำเร็จ",
-      text: "หากเปลี่ยนตัวเลือก รายการที่บันทึกไม่สำเร็จจะหายไป ต้องการดำเนินการต่อหรือไม่",
+      title: "มีคะแนนที่ยังไม่ได้บันทึก",
+      text: "หากเปลี่ยนตัวเลือก คะแนนที่ยังไม่ได้บันทึกจะหายไป ต้องการดำเนินการต่อหรือไม่",
       showCancelButton: true,
       confirmButtonText: "ดำเนินการต่อ",
       cancelButtonText: "ยกเลิก",
@@ -103,6 +107,8 @@ async function loadPt12(yearId, classId, semester) {
 
     pt12Data = result.data;
     pt12Failed = new Set();
+    pt12Dirty = new Set();
+    pt12Version = {};
     pt12Comments = {};
     pt12Data.students.forEach((st) => {
       pt12Comments[st.studentId] = {};
@@ -215,6 +221,14 @@ function renderPt12() {
         <div class="flex items-center gap-3">
           ${editable ? "" : `<span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-50 text-amber-600">ดูอย่างเดียว</span>`}
           <span id="progressText" class="text-xs text-gray-500"></span>
+          ${
+            editable
+              ? `<button id="saveScoresBtn" type="button" disabled
+                    class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกคะแนน<span id="saveScoresCount"></span>
+                  </button>`
+              : ""
+          }
         </div>
       </div>
       <div class="overflow-x-auto">
@@ -235,19 +249,25 @@ function renderPt12() {
 
   const body = document.getElementById("pt12Body");
 
-  // ตรวจช่วงคะแนนทันทีที่พิมพ์ (ขึ้นสีแดงถ้าเกินคะแนนเต็ม) และอัปเดตตัวนับความคืบหน้า
+  // แผนที่ช่องกรอก (ใช้ตอนวางหลายแถว/เก็บค่า)
+  pt12Inputs = {};
+  body.querySelectorAll("input.pt12-score").forEach((el) => {
+    (pt12Inputs[el.dataset.student] = pt12Inputs[el.dataset.student] || {})[el.dataset.field] = el;
+  });
+
+  // พิมพ์คะแนน: ตรวจช่วงทันที (แดงถ้าเกินคะแนนเต็ม) และทำเครื่องหมาย "ยังไม่ได้บันทึก"
   body.addEventListener("input", function (e) {
     if (e.target.classList.contains("pt12-score")) {
       markScoreValidity(e.target);
+      markDirty(e.target.dataset.student);
       updateProgressText();
     }
   });
 
-  // ออกจากช่องคะแนน (change) -> บันทึกแถวนั้นทันที ถ้าคะแนนไม่ถูกต้องจะไม่บันทึกและแจ้งเตือน
+  // ออกจากช่อง: ถ้าคะแนนไม่ถูกต้องให้แจ้งเตือน (ยังไม่บันทึกจนกว่าจะกดปุ่ม "บันทึกคะแนน")
   body.addEventListener("change", function (e) {
     const el = e.target;
     if (!el.classList.contains("pt12-score")) return;
-
     markScoreValidity(el);
     if (el.classList.contains("border-red-400")) {
       const field = PT12_FIELDS.find((f) => f.key === el.dataset.field);
@@ -257,9 +277,30 @@ function renderPt12() {
         text: `คะแนน${field ? field.label : ""}ต้องเป็นตัวเลข 0 ถึง ${el.max}`,
         confirmButtonColor: "#268244",
       });
-      return;
     }
-    saveRow(el.dataset.student);
+  });
+
+  // วางข้อมูลหลายแถว/หลายคอลัมน์ (copy จาก Excel / Google Sheets) เริ่มจากช่องที่วาง
+  body.addEventListener("paste", function (e) {
+    const el = e.target;
+    if (!el.classList || !el.classList.contains("pt12-score") || el.disabled) return;
+    const text = (e.clipboardData || window.clipboardData).getData("text");
+    if (!/[\t\r\n]/.test(text)) return; // ค่าเดียวธรรมดา ใช้การวางปกติ
+    e.preventDefault();
+    pasteScores(el, text);
+  });
+
+  // Enter = ไปช่องเดียวกันของแถวถัดไป
+  body.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || !e.target.classList.contains("pt12-score")) return;
+    e.preventDefault();
+    const ids = pt12Data.students.map((s) => String(s.studentId));
+    const next = ids[ids.indexOf(e.target.dataset.student) + 1];
+    const nextEl = next !== undefined && pt12Inputs[next] && pt12Inputs[next][e.target.dataset.field];
+    if (nextEl) {
+      nextEl.focus();
+      nextEl.select();
+    }
   });
 
   body.addEventListener("click", function (e) {
@@ -269,10 +310,107 @@ function renderPt12() {
       return;
     }
     const retry = e.target.closest("[data-retry-student]");
-    if (retry) saveRow(retry.dataset.retryStudent);
+    if (retry) saveRows([retry.dataset.retryStudent]);
+  });
+
+  const saveBtn = document.getElementById("saveScoresBtn");
+  if (saveBtn) saveBtn.addEventListener("click", saveDirtyScores);
+
+  updateProgressText();
+}
+
+function markDirty(studentId) {
+  const sid = String(studentId);
+  pt12Dirty.add(sid);
+  pt12Version[sid] = (pt12Version[sid] || 0) + 1;
+  setRowStatus(sid, "dirty");
+  updateSaveButton();
+}
+
+function updateSaveButton() {
+  const btn = document.getElementById("saveScoresBtn");
+  if (!btn) return;
+  const n = pt12Dirty.size;
+  btn.disabled = n === 0;
+  document.getElementById("saveScoresCount").textContent = n > 0 ? ` (${n})` : "";
+}
+
+// วางข้อมูลจากคลิปบอร์ด: แถว = นักเรียนเรียงตามเลขที่ต่อจากช่องที่วาง, คอลัมน์ = ภาษาไทย > คณิต > อังกฤษ > เสริมประสบการณ์
+function pasteScores(startEl, text) {
+  const lines = text.replace(/\r/g, "").split("\n");
+  while (lines.length && lines[lines.length - 1] === "") lines.pop();
+
+  const ids = pt12Data.students.map((s) => String(s.studentId));
+  const startRow = ids.indexOf(startEl.dataset.student);
+  const startCol = PT12_FIELDS.findIndex((f) => f.key === startEl.dataset.field);
+  let filled = 0;
+  let nonNumeric = 0;
+  let outOfRange = 0;
+  let extraRows = 0;
+
+  lines.forEach((line, i) => {
+    const sid = ids[startRow + i];
+    if (sid === undefined) {
+      extraRows++;
+      return;
+    }
+    let touched = false;
+    line.split("\t").forEach((raw, j) => {
+      const f = PT12_FIELDS[startCol + j];
+      if (!f) return;
+      const input = pt12Inputs[sid] && pt12Inputs[sid][f.key];
+      if (!input) return;
+      let v = raw.trim().replace(/^(\d+),(\d+)$/, "$1.$2");
+      if (v !== "" && isNaN(Number(v))) {
+        nonNumeric++;
+        return;
+      }
+      input.value = v;
+      markScoreValidity(input);
+      if (input.classList.contains("border-red-400")) outOfRange++;
+      touched = true;
+      filled++;
+    });
+    if (touched) markDirty(sid);
   });
 
   updateProgressText();
+
+  const notes = [];
+  if (outOfRange) notes.push(`${outOfRange} ช่องมีคะแนนเกินช่วง (แสดงสีแดง) ต้องแก้ก่อนบันทึก`);
+  if (nonNumeric) notes.push(`ข้าม ${nonNumeric} ช่องที่ไม่ใช่ตัวเลข`);
+  if (extraRows) notes.push(`ข้าม ${extraRows} แถวที่เกินจำนวนนักเรียน`);
+  if (notes.length) {
+    Swal.fire({
+      icon: "warning",
+      title: `วางข้อมูลแล้ว ${filled} ช่อง`,
+      html: notes.map(escapeHtml).join("<br>"),
+      confirmButtonColor: "#268244",
+    });
+  }
+}
+
+// กดปุ่ม "บันทึกคะแนน": ส่งเฉพาะนักเรียนที่แก้ไขในคำขอเดียว
+async function saveDirtyScores() {
+  if (!pt12Data || !pt12Data.isEditable || pt12Dirty.size === 0) return;
+
+  const bad = document.querySelectorAll("#pt12Body .pt12-score.border-red-400");
+  if (bad.length > 0) {
+    await Swal.fire({
+      icon: "warning",
+      title: "มีคะแนนที่ไม่ถูกต้อง",
+      text: `พบ ${bad.length} ช่อง (สีแดง) กรุณาแก้ไขให้อยู่ในช่วงคะแนนที่กำหนดก่อนบันทึก`,
+      confirmButtonColor: "#268244",
+    });
+    bad[0].focus();
+    return;
+  }
+
+  const count = pt12Dirty.size;
+  const result = await saveRows(Array.from(pt12Dirty));
+  if (result.ok) {
+    Swal.fire({ icon: "success", title: `บันทึกคะแนนแล้ว ${count} คน`, confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+  }
 }
 
 function markScoreValidity(el) {
@@ -286,8 +424,9 @@ function markScoreValidity(el) {
 // ค่าของนักเรียน 1 คน ณ ตอนนี้ (คะแนนจากช่องกรอก + ความเห็นจาก pt12Comments)
 function collectRow(studentId) {
   const row = { studentId: studentId };
-  document.querySelectorAll("#pt12Body input[data-student]").forEach((el) => {
-    if (el.dataset.student === String(studentId)) row[el.dataset.field] = el.value;
+  const inputs = pt12Inputs[String(studentId)] || {};
+  PT12_FIELDS.forEach((f) => {
+    row[f.key] = inputs[f.key] ? inputs[f.key].value : "";
   });
   PT12_COMMENT_FIELDS.forEach((f) => {
     row[f.key] = (pt12Comments[studentId] && pt12Comments[studentId][f.key]) || "";
@@ -314,6 +453,8 @@ function setRowStatus(studentId, state, message) {
     el.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin text-gray-400" title="กำลังบันทึก"></i>';
   } else if (state === "saved") {
     el.innerHTML = '<i class="fa-solid fa-circle-check text-wprimary" title="บันทึกแล้ว"></i>';
+  } else if (state === "dirty") {
+    el.innerHTML = '<i class="fa-solid fa-circle text-amber-400 text-[9px]" title="ยังไม่ได้บันทึก"></i>';
   } else if (state === "error") {
     el.innerHTML = `<button type="button" data-retry-student="${escapeHtml(studentId)}" class="text-red-500 hover:text-red-600" title="${escapeHtml(message || "บันทึกไม่สำเร็จ")} (กดเพื่อลองใหม่)"><i class="fa-solid fa-triangle-exclamation"></i></button>`;
   } else {
@@ -321,21 +462,28 @@ function setRowStatus(studentId, state, message) {
   }
 }
 
+function saveRow(studentId) {
+  return saveRows([studentId]);
+}
+
 /**
- * บันทึกข้อมูลของนักเรียน 1 คนทันที (เข้าคิวทีละคำขอ) คืน { ok, message }
+ * บันทึกนักเรียนหลายคนในคำขอเดียว (เข้าคิวทีละคำขอ) คืน { ok, message }
  * ค่าที่ส่งถูกอ่านตอน "ถึงคิว" ไม่ใช่ตอนกด จึงเป็นค่าล่าสุดเสมอ
  */
-function saveRow(studentId) {
+function saveRows(studentIds) {
   if (!pt12Data || !pt12Data.isEditable) {
     return Promise.resolve({ ok: false, message: "ปีการศึกษาที่ผ่านมาดูข้อมูลได้อย่างเดียว" });
   }
 
+  const ids = studentIds.map(String);
   const classId = pt12Data.selectedClassId;
   const yearId = pt12Data.selectedYearId;
   const semester = pt12Data.semester;
+  const versions = {};
+  ids.forEach((id) => (versions[id] = pt12Version[id] || 0));
 
   pt12Pending++;
-  setRowStatus(studentId, "saving");
+  ids.forEach((id) => setRowStatus(id, "saving"));
 
   const task = pt12SaveChain.then(async () => {
     // ผู้ใช้เปลี่ยนห้อง/ปี/ภาคเรียนไปแล้วระหว่างรอคิว -> ข้ามคำขอเก่า (ห้ามส่งค่าไปผิดห้อง)
@@ -348,26 +496,38 @@ function saveRow(studentId) {
       return { ok: false, message: "ข้ามคำขอเก่า" };
     }
 
+    const markError = (msg) => {
+      ids.forEach((id) => {
+        pt12Failed.add(id);
+        setRowStatus(id, "error", msg);
+      });
+    };
+
     try {
       const result = await callApi("savePt12Results", {
         userId: pt12User.userId,
         academicYearId: yearId,
         classId: classId,
         semester: semester,
-        results: [collectRow(studentId)],
+        results: ids.map(collectRow),
       });
 
       if (result.status === "success") {
-        pt12Failed.delete(studentId);
-        setRowStatus(studentId, "saved");
+        ids.forEach((id) => {
+          pt12Failed.delete(id);
+          if ((pt12Version[id] || 0) === versions[id]) {
+            pt12Dirty.delete(id);
+            setRowStatus(id, "saved");
+          } else {
+            setRowStatus(id, "dirty"); // มีการแก้ไขซ้ำระหว่างรอ -> ยังต้องบันทึกอีกรอบ
+          }
+        });
         return { ok: true };
       }
-      pt12Failed.add(studentId);
-      setRowStatus(studentId, "error", result.message);
+      markError(result.message);
       return { ok: false, message: result.message };
     } catch (err) {
-      pt12Failed.add(studentId);
-      setRowStatus(studentId, "error", "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ");
+      markError("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ");
       return { ok: false, message: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ" };
     }
   });
@@ -379,6 +539,7 @@ function saveRow(studentId) {
 
   return task.then((r) => {
     pt12Pending--;
+    updateSaveButton();
     if (!r.ok && r.message && r.message !== "ข้ามคำขอเก่า") {
       Swal.fire({ icon: "error", title: "บันทึกไม่สำเร็จ", text: r.message, confirmButtonColor: "#268244" });
     }
