@@ -43,18 +43,29 @@ const MENU_CONFIG = [
     icon: "fa-star",
     label: "คุณลักษณะ/คิดวิเคราะห์อ่านเขียน",
     href: "homeroom-evaluation.html",
+    homeroomLevels: ["", "PRIMARY", "MIXED"], // ครูประจำชั้นอนุบาลล้วนไม่เห็นเมนูนี้
   },
   {
     roles: ["HOMEROOM_TEACHER"],
     icon: "fa-file-pdf",
     label: "ออกรายงาน ปถ.06",
     href: "homeroom-report.html",
+    homeroomLevels: ["", "PRIMARY", "MIXED"], // ครูประจำชั้นอนุบาลล้วนไม่เห็นเมนูนี้
   },
   {
     roles: ["HOMEROOM_TEACHER"],
     icon: "fa-file-pdf",
     label: "ออกรายงาน ปถ.07",
     href: "pt07-report.html",
+    homeroomLevels: ["", "PRIMARY", "MIXED"], // ครูประจำชั้นอนุบาลล้วนไม่เห็นเมนูนี้
+  },
+  {
+    // ครูประจำชั้นอนุบาล (อ.1-อ.3) เห็นเมนูนี้เมนูเดียว (ไม่เห็นเมนูของประถมด้านบน) — 5 ต.ค. 2569
+    roles: ["HOMEROOM_TEACHER"],
+    icon: "fa-file-pdf",
+    label: "ออกรายงาน ปถ.12",
+    href: "pt12-report.html",
+    homeroomLevels: ["KINDERGARTEN", "MIXED"],
   },
   // ===== นายทะเบียน/ผู้ช่วยนายทะเบียน: จัดกลุ่มเมนูด้วย field "group" (27 ก.ย. 2569) =====
   // เมนูที่ไม่มี field "group" จะแสดงแบบเดิม (ไม่จัดกลุ่ม) — ใช้กับ role อื่นที่มีเมนูน้อยอยู่แล้วด้านล่าง
