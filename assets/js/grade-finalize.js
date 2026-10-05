@@ -273,12 +273,25 @@ async function runFinalizeAction(action, semester, loadingText, successText) {
     if (result.status === "success") {
       Swal.fire({ icon: "success", title: successText, confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
       await loadFinalizeIfReady();
+    } else if (Array.isArray(result.missingStudents) && result.missingStudents.length > 0) {
+      // คะแนนยังไม่ครบ (Backend ปฏิเสธการส่งผลการเรียน) -> แสดงรายชื่อนักเรียนที่ยังขาดคะแนนให้ครูเห็นชัดๆ ว่าต้องไปกรอกใคร
+      const listHtml = result.missingStudents
+        .map((s) => `<li class="py-1 border-b border-gray-100 last:border-0">${s.studentNumber}. ${s.fullName}</li>`)
+        .join("");
+      Swal.fire({
+        icon: "warning",
+        title: "คะแนนยังไม่ครบ ส่งผลการเรียนไม่ได้",
+        html: `
+          <p class="text-sm text-gray-600 mb-2">${result.message}</p>
+          <p class="text-xs text-gray-500 mb-1 text-left">รายชื่อนักเรียนที่ยังกรอกคะแนนไม่ครบ:</p>
+          <ul class="text-sm text-left max-h-60 overflow-y-auto">${listHtml}</ul>
+        `,
+        confirmButtonText: "ปิด",
+        confirmButtonColor: "#268244",
+      });
+      renderFinalizeTable();
     } else {
       Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
       renderFinalizeTable();
     }
-  } catch (err) {
-    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
-    renderFinalizeTable();
-  }
 }
