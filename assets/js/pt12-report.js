@@ -10,10 +10,18 @@ const PT12_FIELDS = [
   { key: "english", label: "ภาษาอังกฤษ" },
   { key: "experience", label: "เสริมประสบการณ์" },
 ];
-const PT12_COMMENT_MAX = 1000;
+// ความเห็นครูประจำชั้นแบ่งเป็น 4 ด้าน (ต่อด้านไม่เกิน PT12_COMMENT_MAX ตัวอักษร)
+const PT12_COMMENT_FIELDS = [
+  { key: "commentPhysical", label: "ด้านร่างกาย" },
+  { key: "commentEmotional", label: "ด้านอารมณ์และจิตใจ" },
+  { key: "commentSocial", label: "ด้านสังคม" },
+  { key: "commentIntellectual", label: "ด้านสติปัญญา" },
+];
+const PT12_COMMENT_MAX = 500;
 
 let pt12Data = null; // ข้อมูลล่าสุดที่โหลดจาก Backend
 let pt12Dirty = false; // มีการแก้ไขที่ยังไม่ได้บันทึกหรือไม่
+let pt12DirtyStudents = new Set(); // รหัสนักเรียนที่ครูแก้ไขจริง (ส่งเฉพาะแถวเหล่านี้ตอนบันทึก กันเขียนทับค่าที่ครูอีกคนเพิ่งบันทึก)
 
 function escapeHtml(value) {
   return String(value === null || value === undefined ? "" : value)
@@ -83,6 +91,7 @@ async function loadPt12(userData, classId, semester) {
 
     pt12Data = result.data;
     pt12Dirty = false;
+    pt12DirtyStudents = new Set();
     renderPt12();
   } catch (err) {
     content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</div>`;
@@ -137,6 +146,10 @@ function renderPt12() {
       `<th class="px-2 py-3 text-center whitespace-nowrap w-28">${f.label}<br><span class="text-[11px] font-normal normal-case text-gray-400">เต็ม ${max[f.key]}</span></th>`
   ).join("");
 
+  const commentHeadCells = PT12_COMMENT_FIELDS.map(
+    (f) => `<th class="px-3 py-3 text-left whitespace-nowrap">ความเห็น${f.label}</th>`
+  ).join("");
+
   const rowsHtml = pt12Data.students
     .map((s) => {
       const scoreCells = PT12_FIELDS.map(
@@ -149,16 +162,21 @@ function renderPt12() {
         </td>`
       ).join("");
 
+      const commentCells = PT12_COMMENT_FIELDS.map(
+        (f) => `
+        <td class="px-2 py-2">
+          <textarea rows="3" maxlength="${PT12_COMMENT_MAX}" data-student="${escapeHtml(s.studentId)}" data-field="${f.key}"
+                    placeholder="${f.label}"
+                    class="pt12-comment w-full min-w-[220px] text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-wprimary/30">${escapeHtml(s[f.key])}</textarea>
+        </td>`
+      ).join("");
+
       return `
       <tr class="border-b border-gray-100 align-top">
         <td class="px-3 py-3 text-center text-gray-600">${escapeHtml(s.studentNumber)}</td>
         <td class="px-3 py-3 text-gray-700 whitespace-nowrap sticky left-0 bg-white">${escapeHtml(s.fullName)}</td>
         ${scoreCells}
-        <td class="px-2 py-2">
-          <textarea rows="2" maxlength="${PT12_COMMENT_MAX}" data-student="${escapeHtml(s.studentId)}" data-field="comment"
-                    placeholder="ความคิดเห็นของครูประจำชั้น"
-                    class="pt12-comment w-full min-w-[260px] text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-wprimary/30">${escapeHtml(s.comment)}</textarea>
-        </td>
+        ${commentCells}
       </tr>`;
     })
     .join("");
@@ -175,7 +193,7 @@ function renderPt12() {
               <th class="px-3 py-3 text-center w-14">เลขที่</th>
               <th class="px-3 py-3 text-left sticky left-0 bg-gray-50">ชื่อ-นามสกุล</th>
               ${headCells}
-              <th class="px-3 py-3 text-left">ความคิดเห็นครูประจำชั้น</th>
+              ${commentHeadCells}
             </tr>
           </thead>
           <tbody id="pt12Body">${rowsHtml}</tbody>
@@ -192,6 +210,7 @@ function renderPt12() {
       markScoreValidity(el);
     }
     pt12Dirty = true;
+    if (el.dataset.student) pt12DirtyStudents.add(el.dataset.student);
     updateProgressText();
   });
 
@@ -207,11 +226,12 @@ function markScoreValidity(el) {
   el.classList.toggle("border-gray-300", !bad);
 }
 
-// เก็บค่าจากฟอร์มทั้งหมดเป็นรายการที่ส่งให้ Backend
-function collectResults() {
+// เก็บค่าจากฟอร์มเป็นรายการนักเรียน (onlyDirty = true -> เฉพาะแถวที่ครูแก้ไขจริง)
+function collectResults(onlyDirty) {
   const byStudent = {};
   document.querySelectorAll("#pt12Body [data-student]").forEach((el) => {
     const sid = el.dataset.student;
+    if (onlyDirty && !pt12DirtyStudents.has(sid)) return;
     if (!byStudent[sid]) byStudent[sid] = { studentId: sid };
     byStudent[sid][el.dataset.field] = el.value;
   });
@@ -237,6 +257,13 @@ async function saveAll(userData) {
     return;
   }
 
+  // ส่งเฉพาะแถวที่แก้ไขจริงเท่านั้น (กันเขียนทับข้อมูลที่ครูประจำชั้นอีกคน/แท็บอื่นเพิ่งบันทึกไว้)
+  const resultsToSave = collectResults(true);
+  if (resultsToSave.length === 0) {
+    Swal.fire({ icon: "info", title: "ไม่มีข้อมูลที่แก้ไข", text: "ยังไม่มีการเปลี่ยนแปลงที่ต้องบันทึก", confirmButtonColor: "#268244" });
+    return;
+  }
+
   const btn = document.getElementById("saveAllBtn");
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>กำลังบันทึก...';
@@ -246,11 +273,12 @@ async function saveAll(userData) {
       userId: userData.userId,
       classId: pt12Data.selectedClassId,
       semester: pt12Data.semester,
-      results: collectResults(),
+      results: resultsToSave,
     });
 
     if (result.status === "success") {
       pt12Dirty = false;
+      pt12DirtyStudents = new Set();
       Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", text: result.message, confirmButtonColor: "#268244", timer: 1500, showConfirmButton: false });
     } else {
       Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
