@@ -75,8 +75,12 @@
   function renderSidebar() {
     const currentPage = window.location.pathname.split("/").pop() || "dashboard.html";
 
-    const items = MENU_CONFIG.filter((item) => item.roles.includes(currentRole));
-
+   // เมนูที่มี homeroomLevels (ของครูประจำชั้น) จะแสดงเฉพาะเมื่อระดับชั้นที่ดูแล (userData.homeroomLevel) ตรงกับที่กำหนด — 5 ต.ค. 2569
+   const homeroomLevel = userData.homeroomLevel || "";
+   const items = MENU_CONFIG.filter(
+     (item) => item.roles.includes(currentRole) && (!item.homeroomLevels || item.homeroomLevels.includes(homeroomLevel))
+   );
+    
     // บทบาทผู้อำนวยการสถานศึกษา: ไม่ต้องมีเมนู "หน้าหลัก" มีเมนูเดียวคือ "รายงานสรุปผู้บริหาร" (27 ก.ย. 2569)
     const homeLink =
       currentRole === "DIRECTOR"
