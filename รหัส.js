@@ -2867,15 +2867,41 @@ function buildKindergartenHomeroomDashboard(myClasses, currentYearId) {
  * ตรวจสิทธิ์: ห้องนี้ต้องเป็นห้องอนุบาลที่ userId เป็นครูประจำชั้นในปีการศึกษาปัจจุบันเท่านั้น
  * คืน { cls, currentYear, myKindergartenClasses } หรือ { error } ถ้าไม่ผ่าน
  */
-function resolvePt12Class(userId, requestedClassId) {
+function resolvePt12Class(userId, requestedClassId, requestedYearId) {
+  const years = handleGetAcademicYears().data;
   const currentYear = getCurrentAcademicYearRow();
   if (!currentYear) return { error: "ยังไม่ได้ตั้งค่าปีการศึกษาในระบบ" };
 
-  const myKindergartenClasses = getHomeroomClassesOfUser(userId, currentYear.AcademicYearID).filter((c) =>
-    isKindergartenGradeLevel(c.GradeLevel)
+  // ปีการศึกษาที่ครูเคยเป็นครูประจำชั้นห้องอนุบาล (ใช้เป็นตัวเลือกปีในหน้าเว็บ) อ่านตารางห้องครั้งเดียว
+  const myUserId = String(userId);
+  const allClasses = getCachedSheetData("Classes", 60).filter(
+    (c) =>
+      isKindergartenGradeLevel(c.GradeLevel) &&
+      (String(c.HomeroomTeacherUserID) === myUserId || String(c.HomeroomTeacherUserID2) === myUserId)
   );
+  const yearOptions = years
+    .filter((y) => allClasses.some((c) => String(c.AcademicYearID) === String(y.AcademicYearID)))
+    .map((y) => ({
+      academicYearId: y.AcademicYearID,
+      year: y.Year,
+      isCurrent: String(y.AcademicYearID) === String(currentYear.AcademicYearID),
+    }));
+
+  // ปีที่เลือก: ตามที่ขอมา (ต้องเป็นปีที่ครูมีห้องอนุบาลจริง) ถ้าไม่ระบุ ใช้ปีปัจจุบัน ถ้าปีปัจจุบันไม่มีห้องให้ใช้ปีล่าสุดที่มี
+  let year = currentYear;
+  if (requestedYearId) {
+    const found = yearOptions.find((o) => String(o.academicYearId) === String(requestedYearId));
+    if (!found) return { error: "คุณไม่มีสิทธิ์เข้าถึงปีการศึกษานี้" };
+    year = years.find((y) => String(y.AcademicYearID) === String(requestedYearId));
+  } else if (yearOptions.length > 0 && !yearOptions.some((o) => o.isCurrent)) {
+    year = years.find((y) => String(y.AcademicYearID) === String(yearOptions[0].academicYearId));
+  }
+
+  const myKindergartenClasses = allClasses.filter((c) => String(c.AcademicYearID) === String(year.AcademicYearID));
+  const isCurrentYear = String(year.AcademicYearID) === String(currentYear.AcademicYearID);
+
   if (myKindergartenClasses.length === 0) {
-    return { currentYear: currentYear, myKindergartenClasses: [], cls: null };
+    return { year: year, isCurrentYear: isCurrentYear, yearOptions: yearOptions, myKindergartenClasses: [], cls: null };
   }
 
   const cls = requestedClassId
@@ -2883,23 +2909,40 @@ function resolvePt12Class(userId, requestedClassId) {
     : myKindergartenClasses[0];
   if (!cls) return { error: "คุณไม่มีสิทธิ์เข้าถึงห้องเรียนนี้" };
 
-  return { currentYear: currentYear, myKindergartenClasses: myKindergartenClasses, cls: cls };
+  return {
+    year: year,
+    isCurrentYear: isCurrentYear,
+    yearOptions: yearOptions,
+    myKindergartenClasses: myKindergartenClasses,
+    cls: cls,
+  };
 }
 
 /**
  * ดึงข้อมูลหน้า "ออกรายงาน ปถ.12": รายชื่อนักเรียนในห้อง + คะแนน/ความคิดเห็นที่เคยบันทึกไว้ของภาคเรียนที่เลือก
- * body: { userId, classId (ไม่บังคับ), semester (1|2, ค่าเริ่มต้น 1) }
+ * body: { userId, academicYearId (ไม่บังคับ ค่าเริ่มต้น = ปีปัจจุบัน), classId (ไม่บังคับ), semester (1|2, ค่าเริ่มต้น 1) }
+ * ปีการศึกษาที่ผ่านมาดูได้อย่างเดียว (isEditable = false) แก้ไข/บันทึกได้เฉพาะปีการศึกษาปัจจุบัน
  */
 function handleGetPt12PageData(body) {
   const semester = Number(body.semester) === 2 ? 2 : 1;
 
-  const resolved = resolvePt12Class(body.userId, body.classId);
+  const resolved = resolvePt12Class(body.userId, body.classId, body.academicYearId);
   if (resolved.error) return { status: "error", message: resolved.error };
 
   if (!resolved.cls) {
     return {
       status: "success",
-      data: { classOptions: [], selectedClassId: null, classLabel: "", semester: semester, maxScores: PT12_MAX_SCORES, students: [] },
+      data: {
+        yearOptions: resolved.yearOptions,
+        selectedYearId: resolved.year.AcademicYearID,
+        isEditable: resolved.isCurrentYear,
+        classOptions: [],
+        selectedClassId: null,
+        classLabel: "",
+        semester: semester,
+        maxScores: PT12_MAX_SCORES,
+        students: [],
+      },
     };
   }
 
@@ -2909,7 +2952,7 @@ function handleGetPt12PageData(body) {
   const allStudents = getCachedSheetData("Students", 120);
   const enrollments = getCachedSheetData("StudentEnrollments", 60).filter((e) => String(e.ClassID) === classId);
   const savedByStudent = {};
-  getPt12Results(resolved.currentYear.AcademicYearID, [classId])
+  getPt12Results(resolved.year.AcademicYearID, [classId])
     .filter((r) => Number(r.Semester) === semester)
     .forEach((r) => (savedByStudent[String(r.StudentID)] = r));
 
@@ -2938,7 +2981,10 @@ function handleGetPt12PageData(body) {
   return {
     status: "success",
     data: {
-      academicYearLabel: resolved.currentYear.Year,
+      yearOptions: resolved.yearOptions,
+      selectedYearId: resolved.year.AcademicYearID,
+      isEditable: resolved.isCurrentYear,
+      academicYearLabel: resolved.year.Year,
       classOptions: resolved.myKindergartenClasses.map((c) => ({
         classId: c.ClassID,
         label: c.GradeLevel + "/" + c.RoomNumber,
@@ -2954,7 +3000,7 @@ function handleGetPt12PageData(body) {
 
 /**
  * บันทึกคะแนน 4 ด้าน + ความเห็นครูประจำชั้น 4 ด้านของนักเรียนที่ส่งมา (upsert ด้วย ปี+ห้อง+นักเรียน+ภาคเรียน)
- * body: { userId, classId, semester, results: [{ studentId, thai, math, english, experience,
+ * body: { userId, academicYearId, classId, semester, results: [{ studentId, thai, math, english, experience,
  *         commentPhysical, commentEmotional, commentSocial, commentIntellectual }] }
  * ช่องคะแนนเว้นว่างได้ (= ยังไม่บันทึก) แต่ถ้ากรอกต้องเป็นตัวเลข 0 ถึงคะแนนเต็มของด้านนั้น
  */
@@ -2966,14 +3012,17 @@ function handleSavePt12Results(body) {
     return { status: "error", message: "ข้อมูลไม่ครบถ้วน" };
   }
 
-  const resolved = resolvePt12Class(body.userId, body.classId);
+  const resolved = resolvePt12Class(body.userId, body.classId, body.academicYearId);
   if (resolved.error) return { status: "error", message: resolved.error };
   if (!resolved.cls) {
-    return { status: "error", message: "คุณไม่ได้เป็นครูประจำชั้นอนุบาลห้องใดในปีการศึกษาปัจจุบัน" };
+    return { status: "error", message: "คุณไม่ได้เป็นครูประจำชั้นอนุบาลห้องใดในปีการศึกษานี้" };
+  }
+  if (!resolved.isCurrentYear) {
+    return { status: "error", message: "ปีการศึกษาที่ผ่านมาดูข้อมูลได้อย่างเดียว แก้ไขได้เฉพาะปีการศึกษาปัจจุบัน" };
   }
 
   const classId = String(resolved.cls.ClassID);
-  const academicYearId = resolved.currentYear.AcademicYearID;
+  const academicYearId = resolved.year.AcademicYearID;
 
   const enrolledStudentIds = {};
   getCachedSheetData("StudentEnrollments", 60)
