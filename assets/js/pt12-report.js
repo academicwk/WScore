@@ -10,10 +10,20 @@ const PT12_FIELDS = [
   { key: "english", label: "ภาษาอังกฤษ" },
   { key: "experience", label: "เสริมประสบการณ์" },
 ];
-const PT12_COMMENT_MAX = 1000;
+// ความเห็นครูประจำชั้นแบ่งเป็น 4 ด้าน (ต่อด้านไม่เกิน PT12_COMMENT_MAX ตัวอักษร)
+const PT12_COMMENT_FIELDS = [
+  { key: "commentPhysical", label: "ด้านร่างกาย" },
+  { key: "commentEmotional", label: "ด้านอารมณ์และจิตใจ" },
+  { key: "commentSocial", label: "ด้านสังคม" },
+  { key: "commentIntellectual", label: "ด้านสติปัญญา" },
+];
+const PT12_COMMENT_MAX = 500;
 
 let pt12Data = null; // ข้อมูลล่าสุดที่โหลดจาก Backend
 let pt12Dirty = false; // มีการแก้ไขที่ยังไม่ได้บันทึกหรือไม่
+let pt12DirtyStudents = new Set(); // รหัสนักเรียนที่ครูแก้ไขจริง (ส่งเฉพาะแถวเหล่านี้ตอนบันทึก กันเขียนทับค่าที่ครูอีกคนเพิ่งบันทึก)
+let pt12Comments = {}; // ความเห็นครูประจำชั้น 4 ด้านของนักเรียนแต่ละคน { studentId: { commentPhysical, ... } } (แก้ไขผ่าน Modal)
+let pt12ModalStudentId = null; // นักเรียนที่กำลังเปิด Modal ความเห็นอยู่
 
 function escapeHtml(value) {
   return String(value === null || value === undefined ? "" : value)
@@ -83,6 +93,12 @@ async function loadPt12(userData, classId, semester) {
 
     pt12Data = result.data;
     pt12Dirty = false;
+    pt12DirtyStudents = new Set();
+    pt12Comments = {};
+    pt12Data.students.forEach((st) => {
+      pt12Comments[st.studentId] = {};
+      PT12_COMMENT_FIELDS.forEach((f) => (pt12Comments[st.studentId][f.key] = st[f.key] || ""));
+    });
     renderPt12();
   } catch (err) {
     content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</div>`;
@@ -149,16 +165,20 @@ function renderPt12() {
         </td>`
       ).join("");
 
+      const commentCell = `
+        <td class="px-2 py-2 text-center whitespace-nowrap">
+          <button type="button" data-comment-student="${escapeHtml(s.studentId)}"
+                  class="pt12-comment-btn text-xs font-medium px-3 py-1.5 rounded-lg border border-wprimary text-wprimary hover:bg-wprimary-light">
+            ${commentButtonInner(s.studentId)}
+          </button>
+        </td>`;
+
       return `
       <tr class="border-b border-gray-100 align-top">
         <td class="px-3 py-3 text-center text-gray-600">${escapeHtml(s.studentNumber)}</td>
         <td class="px-3 py-3 text-gray-700 whitespace-nowrap sticky left-0 bg-white">${escapeHtml(s.fullName)}</td>
         ${scoreCells}
-        <td class="px-2 py-2">
-          <textarea rows="2" maxlength="${PT12_COMMENT_MAX}" data-student="${escapeHtml(s.studentId)}" data-field="comment"
-                    placeholder="ความคิดเห็นของครูประจำชั้น"
-                    class="pt12-comment w-full min-w-[260px] text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-wprimary/30">${escapeHtml(s.comment)}</textarea>
-        </td>
+        ${commentCell}
       </tr>`;
     })
     .join("");
@@ -175,7 +195,7 @@ function renderPt12() {
               <th class="px-3 py-3 text-center w-14">เลขที่</th>
               <th class="px-3 py-3 text-left sticky left-0 bg-gray-50">ชื่อ-นามสกุล</th>
               ${headCells}
-              <th class="px-3 py-3 text-left">ความคิดเห็นครูประจำชั้น</th>
+              <th class="px-3 py-3 text-center whitespace-nowrap w-40">ความเห็นครูประจำชั้น</th>
             </tr>
           </thead>
           <tbody id="pt12Body">${rowsHtml}</tbody>
@@ -192,7 +212,12 @@ function renderPt12() {
       markScoreValidity(el);
     }
     pt12Dirty = true;
+    if (el.dataset.student) pt12DirtyStudents.add(el.dataset.student);
     updateProgressText();
+  });
+  body.addEventListener("click", function (e) {
+    const btn = e.target.closest("[data-comment-student]");
+    if (btn) openCommentModal(btn.dataset.commentStudent);
   });
 
   body.querySelectorAll(".pt12-score").forEach(markScoreValidity);
@@ -207,16 +232,104 @@ function markScoreValidity(el) {
   el.classList.toggle("border-gray-300", !bad);
 }
 
-// เก็บค่าจากฟอร์มทั้งหมดเป็นรายการที่ส่งให้ Backend
-function collectResults() {
+// เก็บค่าจากฟอร์มเป็นรายการนักเรียน (onlyDirty = true -> เฉพาะแถวที่ครูแก้ไขจริง) คะแนนจากช่องกรอก ความเห็นจาก pt12Comments
+function collectResults(onlyDirty) {
   const byStudent = {};
   document.querySelectorAll("#pt12Body [data-student]").forEach((el) => {
     const sid = el.dataset.student;
+    if (onlyDirty && !pt12DirtyStudents.has(sid)) return;
     if (!byStudent[sid]) byStudent[sid] = { studentId: sid };
     byStudent[sid][el.dataset.field] = el.value;
   });
+  Object.keys(byStudent).forEach((sid) => {
+    PT12_COMMENT_FIELDS.forEach((f) => {
+      byStudent[sid][f.key] = (pt12Comments[sid] && pt12Comments[sid][f.key]) || "";
+    });
+  });
   return Object.keys(byStudent).map((sid) => byStudent[sid]);
 }
+
+// ===== Modal ความเห็นครูประจำชั้น 4 ด้าน =====
+function commentFilledCount(studentId) {
+  const c = pt12Comments[studentId] || {};
+  return PT12_COMMENT_FIELDS.filter((f) => String(c[f.key] || "").trim() !== "").length;
+}
+
+function commentButtonInner(studentId) {
+  const n = commentFilledCount(studentId);
+  return `<i class="fa-solid fa-comment-dots mr-1"></i>${n > 0 ? "แก้ไขความเห็น (" + n + "/4)" : "เพิ่มความเห็น"}`;
+}
+
+function openCommentModal(studentId) {
+  const student = pt12Data.students.find((s) => String(s.studentId) === String(studentId));
+  if (!student) return;
+
+  pt12ModalStudentId = studentId;
+  document.getElementById("commentModalTitle").textContent = `เลขที่ ${student.studentNumber} ${student.fullName}`;
+
+  document.getElementById("commentModalBody").innerHTML = PT12_COMMENT_FIELDS.map(
+    (f) => `
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <label class="text-sm font-medium text-gray-700">${f.label}</label>
+        <span class="text-xs text-gray-400"><span id="count-${f.key}">0</span>/${PT12_COMMENT_MAX}</span>
+      </div>
+      <textarea id="modal-${f.key}" rows="4" maxlength="${PT12_COMMENT_MAX}" data-key="${f.key}"
+                class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30"></textarea>
+    </div>`
+  ).join("");
+
+  PT12_COMMENT_FIELDS.forEach((f) => {
+    const ta = document.getElementById("modal-" + f.key);
+    ta.value = (pt12Comments[studentId] && pt12Comments[studentId][f.key]) || "";
+    const counter = document.getElementById("count-" + f.key);
+    counter.textContent = ta.value.length;
+    ta.addEventListener("input", () => (counter.textContent = ta.value.length));
+  });
+
+  document.getElementById("commentModal").classList.remove("hidden");
+  document.getElementById("modal-" + PT12_COMMENT_FIELDS[0].key).focus();
+}
+
+function closeCommentModal() {
+  document.getElementById("commentModal").classList.add("hidden");
+  pt12ModalStudentId = null;
+}
+
+// กด "ตกลง" ใน Modal = เก็บค่าไว้ในหน้า (ยังไม่ส่งไปเซิร์ฟเวอร์ ต้องกด "บันทึกทั้งหมด" อีกครั้ง)
+function confirmCommentModal() {
+  const sid = pt12ModalStudentId;
+  if (sid === null) return;
+
+  let changed = false;
+  PT12_COMMENT_FIELDS.forEach((f) => {
+    const newValue = document.getElementById("modal-" + f.key).value.trim();
+    if (newValue !== ((pt12Comments[sid] && pt12Comments[sid][f.key]) || "")) changed = true;
+    pt12Comments[sid][f.key] = newValue;
+  });
+
+  if (changed) {
+    pt12Dirty = true;
+    pt12DirtyStudents.add(String(sid));
+    const btn = document.querySelector(`[data-comment-student="${CSS.escape(String(sid))}"]`);
+    if (btn) btn.innerHTML = commentButtonInner(sid);
+  }
+  closeCommentModal();
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  const modal = document.getElementById("commentModal");
+  if (!modal) return;
+  document.getElementById("commentModalCancel").addEventListener("click", closeCommentModal);
+  document.getElementById("commentModalClose").addEventListener("click", closeCommentModal);
+  document.getElementById("commentModalOk").addEventListener("click", confirmCommentModal);
+  modal.addEventListener("click", function (e) {
+    if (e.target === modal) closeCommentModal();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && !modal.classList.contains("hidden")) closeCommentModal();
+  });
+});
 
 function updateProgressText() {
   const rows = collectResults();
@@ -237,6 +350,13 @@ async function saveAll(userData) {
     return;
   }
 
+  // ส่งเฉพาะแถวที่แก้ไขจริงเท่านั้น (กันเขียนทับข้อมูลที่ครูประจำชั้นอีกคน/แท็บอื่นเพิ่งบันทึกไว้)
+  const resultsToSave = collectResults(true);
+  if (resultsToSave.length === 0) {
+    Swal.fire({ icon: "info", title: "ไม่มีข้อมูลที่แก้ไข", text: "ยังไม่มีการเปลี่ยนแปลงที่ต้องบันทึก", confirmButtonColor: "#268244" });
+    return;
+  }
+
   const btn = document.getElementById("saveAllBtn");
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>กำลังบันทึก...';
@@ -246,11 +366,12 @@ async function saveAll(userData) {
       userId: userData.userId,
       classId: pt12Data.selectedClassId,
       semester: pt12Data.semester,
-      results: collectResults(),
+      results: resultsToSave,
     });
 
     if (result.status === "success") {
       pt12Dirty = false;
+      pt12DirtyStudents = new Set();
       Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", text: result.message, confirmButtonColor: "#268244", timer: 1500, showConfirmButton: false });
     } else {
       Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
