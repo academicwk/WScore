@@ -53,7 +53,7 @@
           </button>
         </div>
         <p class="text-xs text-gray-400 mt-3">
-          กรอกคะแนนแต่ละด้านไม่เกินคะแนนเต็ม (ภาษาไทย 30, คณิตศาสตร์ 30, ภาษาอังกฤษ 20, เสริมประสบการณ์ 20) เว้นว่างได้ถ้ายังไม่ประเมิน — ระบบไม่คำนวณคะแนนรวม/ค่าเฉลี่ย | ความเห็นครูประจำชั้นแบ่ง 4 ด้าน (ร่างกาย / อารมณ์และจิตใจ / สังคม / สติปัญญา) ด้านละไม่เกิน 500 ตัวอักษร
+          กรอกคะแนนแต่ละด้านไม่เกินคะแนนเต็ม (ภาษาไทย 30, คณิตศาสตร์ 30, ภาษาอังกฤษ 20, เสริมประสบการณ์ 20) เว้นว่างได้ถ้ายังไม่ประเมิน — ระบบไม่คำนวณคะแนนรวม/ค่าเฉลี่ย | ความเห็นครูประจำชั้นแบ่ง 4 ด้าน (ร่างกาย / อารมณ์และจิตใจ / สังคม / สติปัญญา) ด้านละไม่เกิน 500 ตัวอักษร กดปุ่ม "เพิ่มความเห็น" ในแต่ละแถวเพื่อกรอก
         </p>
       </div>
 
@@ -65,6 +65,29 @@
 
     </div>
   </main>
+
+  <!-- Modal : ความเห็นครูประจำชั้น 4 ด้านของนักเรียน 1 คน -->
+  <div id="commentModal" class="hidden fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl shadow-xl w-full max-w-xl max-h-[90vh] flex flex-col">
+      <div class="flex items-start justify-between gap-3 p-4 border-b border-gray-100">
+        <div>
+          <h3 class="text-base font-bold text-wsecondary">ความเห็นครูประจำชั้น</h3>
+          <p id="commentModalTitle" class="text-sm text-gray-500 mt-0.5"></p>
+        </div>
+        <button id="commentModalClose" type="button" class="text-gray-400 hover:text-gray-600 text-lg" aria-label="ปิด">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <div id="commentModalBody" class="p-4 space-y-4 overflow-y-auto"></div>
+      <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2 p-4 border-t border-gray-100">
+        <p class="text-xs text-gray-400">กด "ตกลง" แล้วต้องกด "บันทึกทั้งหมด" ที่หน้าตารางอีกครั้งเพื่อบันทึกลงระบบ</p>
+        <div class="flex gap-2 justify-end">
+          <button id="commentModalCancel" type="button" class="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">ยกเลิก</button>
+          <button id="commentModalOk" type="button" class="px-5 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">ตกลง</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
 <script src="assets/js/api.config.js"></script>
 <script src="assets/js/menu.config.js"></script>
