@@ -28,33 +28,15 @@
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h1 class="text-lg font-bold text-wsecondary">
           <i class="fa-solid fa-file-pdf text-wprimary mr-2"></i>ออกรายงาน ปถ.12
-          <span class="block sm:inline text-sm font-medium text-gray-500 sm:ml-2">บันทึกคะแนนและความคิดเห็นครูประจำชั้น (ระดับอนุบาล)</span>
         </h1>
-      </div>
-
-      <div class="bg-white rounded-xl shadow p-5 mb-4">
-        <div class="flex flex-wrap items-end gap-3">
-          <div id="classFilterWrap" class="hidden">
-            <label class="block text-xs font-medium text-gray-600 mb-1">ห้องเรียน</label>
-            <select id="classFilter" class="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30"></select>
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-600 mb-1">ภาคเรียน</label>
-            <select id="semesterFilter" class="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30">
-              <option value="1">ภาคเรียนที่ 1</option>
-              <option value="2">ภาคเรียนที่ 2</option>
-            </select>
-          </div>
-          <div id="progressText" class="text-xs text-gray-500 pb-2"></div>
-          <div class="flex-1"></div>
-          <button id="saveAllBtn"
-                  class="hidden px-5 py-2.5 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg whitespace-nowrap">
-            <i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกทั้งหมด
-          </button>
+        <div class="flex flex-wrap items-center gap-2">
+          <select id="yearFilter" class="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30"></select>
+          <select id="classFilter" class="hidden text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30"></select>
+          <select id="semesterFilter" class="text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-wprimary/30">
+            <option value="1">ภาคเรียนที่ 1</option>
+            <option value="2">ภาคเรียนที่ 2</option>
+          </select>
         </div>
-        <p class="text-xs text-gray-400 mt-3">
-          กรอกคะแนนแต่ละด้านไม่เกินคะแนนเต็ม (ภาษาไทย 30, คณิตศาสตร์ 30, ภาษาอังกฤษ 20, เสริมประสบการณ์ 20) เว้นว่างได้ถ้ายังไม่ประเมิน — ระบบไม่คำนวณคะแนนรวม/ค่าเฉลี่ย | ความเห็นครูประจำชั้นแบ่ง 4 ด้าน (ร่างกาย / อารมณ์และจิตใจ / สังคม / สติปัญญา) ด้านละไม่เกิน 500 ตัวอักษร กดปุ่ม "เพิ่มความเห็น" ในแต่ละแถวเพื่อกรอก
-        </p>
       </div>
 
       <div id="pt12Content">
@@ -79,12 +61,11 @@
         </button>
       </div>
       <div id="commentModalBody" class="p-4 space-y-4 overflow-y-auto"></div>
-      <div class="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2 p-4 border-t border-gray-100">
-        <p class="text-xs text-gray-400">กด "ตกลง" แล้วต้องกด "บันทึกทั้งหมด" ที่หน้าตารางอีกครั้งเพื่อบันทึกลงระบบ</p>
-        <div class="flex gap-2 justify-end">
-          <button id="commentModalCancel" type="button" class="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">ยกเลิก</button>
-          <button id="commentModalOk" type="button" class="px-5 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">ตกลง</button>
-        </div>
+      <div class="flex justify-end gap-2 p-4 border-t border-gray-100">
+        <button id="commentModalCancel" type="button" class="px-4 py-2 text-sm text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">ยกเลิก</button>
+        <button id="commentModalOk" type="button" class="px-5 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg">
+          <i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึก
+        </button>
       </div>
     </div>
   </div>
