@@ -2752,10 +2752,18 @@ function handleSaveActivityResultsBulk(body) {
  * ไม่เกี่ยวกับ TeachingAssignments (นายทะเบียนไม่ต้องมอบหมายการสอนใดๆ ให้ห้องอนุบาล) ไม่คำนวณคะแนนรวม/เฉลี่ย
  *
  * ต้องสร้างชีตใหม่ชื่อ "Pt12Results" เองใน Google Sheets ก่อนใช้งาน คอลัมน์เรียงตามนี้ (แถวที่ 1):
- * Pt12ResultID | AcademicYearID | ClassID | StudentID | Semester | ThaiScore | MathScore | EnglishScore | ExperienceScore | TeacherComment | RecordedBy | RecordedAt
+ * Pt12ResultID | AcademicYearID | ClassID | StudentID | Semester | ThaiScore | MathScore | EnglishScore | ExperienceScore |
+ * CommentPhysical | CommentEmotional | CommentSocial | CommentIntellectual | RecordedBy | RecordedAt
+ * (ความเห็นครูประจำชั้นแบ่ง 4 ด้าน: ร่างกาย / อารมณ์และจิตใจ / สังคม / สติปัญญา — อ้างอิงคอลัมน์ด้วยชื่อหัวตาราง ลำดับคอลัมน์ไม่สำคัญ)
  */
 const PT12_MAX_SCORES = { thai: 30, math: 30, english: 20, experience: 20 };
-const PT12_COMMENT_MAX_LENGTH = 1000;
+const PT12_COMMENT_MAX_LENGTH = 500; // ต่อ 1 ด้าน
+const PT12_COMMENT_FIELDS = [
+  { key: "commentPhysical", col: "CommentPhysical", label: "ด้านร่างกาย" },
+  { key: "commentEmotional", col: "CommentEmotional", label: "ด้านอารมณ์และจิตใจ" },
+  { key: "commentSocial", col: "CommentSocial", label: "ด้านสังคม" },
+  { key: "commentIntellectual", col: "CommentIntellectual", label: "ด้านสติปัญญา" },
+];
 
 function isKindergartenGradeLevel(gradeLevel) {
   return String(gradeLevel || "").trim().indexOf("อนุบาล") === 0;
@@ -2918,7 +2926,10 @@ function handleGetPt12PageData(body) {
         math: saved.MathScore === undefined ? "" : saved.MathScore,
         english: saved.EnglishScore === undefined ? "" : saved.EnglishScore,
         experience: saved.ExperienceScore === undefined ? "" : saved.ExperienceScore,
-        comment: saved.TeacherComment === undefined ? "" : String(saved.TeacherComment),
+        commentPhysical: saved.CommentPhysical === undefined ? "" : String(saved.CommentPhysical),
+        commentEmotional: saved.CommentEmotional === undefined ? "" : String(saved.CommentEmotional),
+        commentSocial: saved.CommentSocial === undefined ? "" : String(saved.CommentSocial),
+        commentIntellectual: saved.CommentIntellectual === undefined ? "" : String(saved.CommentIntellectual),
       };
     })
     .filter(Boolean)
@@ -2942,8 +2953,9 @@ function handleGetPt12PageData(body) {
 }
 
 /**
- * บันทึกคะแนน 4 ด้าน + ความคิดเห็นครูประจำชั้นของนักเรียนทั้งห้องพร้อมกัน (upsert ด้วย ปี+ห้อง+นักเรียน+ภาคเรียน)
- * body: { userId, classId, semester, results: [{ studentId, thai, math, english, experience, comment }] }
+ * บันทึกคะแนน 4 ด้าน + ความเห็นครูประจำชั้น 4 ด้านของนักเรียนที่ส่งมา (upsert ด้วย ปี+ห้อง+นักเรียน+ภาคเรียน)
+ * body: { userId, classId, semester, results: [{ studentId, thai, math, english, experience,
+ *         commentPhysical, commentEmotional, commentSocial, commentIntellectual }] }
  * ช่องคะแนนเว้นว่างได้ (= ยังไม่บันทึก) แต่ถ้ากรอกต้องเป็นตัวเลข 0 ถึงคะแนนเต็มของด้านนั้น
  */
 function handleSavePt12Results(body) {
@@ -2985,9 +2997,17 @@ function handleSavePt12Results(body) {
     }
     const numberLabel = "เลขที่ " + enrolledStudentIds[sid];
 
-    const row = { studentId: sid, comment: String(item.comment === undefined || item.comment === null ? "" : item.comment).trim() };
-    if (row.comment.length > PT12_COMMENT_MAX_LENGTH) {
-      return { status: "error", message: numberLabel + ": ความคิดเห็นยาวเกิน " + PT12_COMMENT_MAX_LENGTH + " ตัวอักษร" };
+    const row = { studentId: sid };
+    for (let c = 0; c < PT12_COMMENT_FIELDS.length; c++) {
+      const cf = PT12_COMMENT_FIELDS[c];
+      const text = String(item[cf.key] === undefined || item[cf.key] === null ? "" : item[cf.key]).trim();
+      if (text.length > PT12_COMMENT_MAX_LENGTH) {
+        return {
+          status: "error",
+          message: numberLabel + ": ความเห็น" + cf.label + " ยาวเกิน " + PT12_COMMENT_MAX_LENGTH + " ตัวอักษร",
+        };
+      }
+      row[cf.col] = text;
     }
 
     for (let f = 0; f < fields.length; f++) {
@@ -3027,6 +3047,18 @@ function handleSavePt12Results(body) {
     const colIndex = {};
     headers.forEach((h, i) => (colIndex[h] = i));
 
+    // เช็คว่าหัวคอลัมน์ครบตามที่ระบบใช้ (กันกรณีสร้างชีตไว้ด้วยหัวคอลัมน์เวอร์ชันเก่า เช่นยังเป็น TeacherComment)
+    const requiredHeaders = ["Pt12ResultID", "AcademicYearID", "ClassID", "StudentID", "Semester", "RecordedBy", "RecordedAt"]
+      .concat(fields.map((f) => f.col))
+      .concat(PT12_COMMENT_FIELDS.map((c) => c.col));
+    const missingHeaders = requiredHeaders.filter((h) => colIndex[h] === undefined);
+    if (missingHeaders.length > 0) {
+      return {
+        status: "error",
+        message: "ชีต Pt12Results ขาดหัวคอลัมน์: " + missingHeaders.join(", ") + " กรุณาติดต่อผู้ดูแลระบบ",
+      };
+    }
+
     const now = new Date();
     const rowIndexByStudent = {};
     let maxNum = 0;
@@ -3048,7 +3080,7 @@ function handleSavePt12Results(body) {
       if (rowIndexByStudent.hasOwnProperty(row.studentId)) {
         const r = rowIndexByStudent[row.studentId];
         fields.forEach((f) => (data[r][colIndex[f.col]] = row[f.col]));
-        data[r][colIndex.TeacherComment] = row.comment;
+        PT12_COMMENT_FIELDS.forEach((c) => (data[r][colIndex[c.col]] = row[c.col]));
         data[r][colIndex.RecordedBy] = body.userId;
         data[r][colIndex.RecordedAt] = now;
       } else {
@@ -3060,7 +3092,7 @@ function handleSavePt12Results(body) {
         newRow[colIndex.StudentID] = row.studentId;
         newRow[colIndex.Semester] = semester;
         fields.forEach((f) => (newRow[colIndex[f.col]] = row[f.col]));
-        newRow[colIndex.TeacherComment] = row.comment;
+        PT12_COMMENT_FIELDS.forEach((c) => (newRow[colIndex[c.col]] = row[c.col]));
         newRow[colIndex.RecordedBy] = body.userId;
         newRow[colIndex.RecordedAt] = now;
         rowsToAppend.push(newRow);
