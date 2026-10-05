@@ -17,6 +17,13 @@ const SESSION_DURATION_MS = 8 * 60 * 60 * 1000; // อายุเซสชั�
 const PT05_TEMPLATE_FILE_ID = "1E6VTB0bkSGVrP7lSSQqEY3a15tIaMyHEjNoNIMUaXjs";
 const PT05_REPORTS_FOLDER_ID = "1e_IJMSCT0y5d2iTzH9YyMXfkOXnNpL07";
 
+// ===== ตั้งค่าสำหรับระบบรายงาน "ปถ.06" =====
+// PT06_TEMPLATE_FILE_ID = File ID ของไฟล์ Google Sheets ต้นแบบ (เวอร์ชันแก้ไขล่าสุดที่ผู้ใช้ส่งมาเมื่อ 25 ก.ย. 2569 มีชีตเดียวชื่อ "ปพ.6"
+//   โครงสร้างมีคอลัมน์แยกภาคเรียนที่ 1/ภาคเรียนที่ 2/สรุปผลปลายปีในตารางเดียวกัน — ดูรายละเอียดคอมเมนต์ในฟังก์ชัน fillPt06Sheet())
+// โฟลเดอร์เก็บ PDF ที่สร้างขึ้น แยกจากโฟลเดอร์ ปถ.05 ตามที่ผู้ใช้ต้องการ — ไม่ได้ hardcode ID ไว้ที่นี่
+// เพราะระบบจะสร้างโฟลเดอร์ให้เองอัตโนมัติในการใช้งานครั้งแรก (ดูฟังก์ชัน getPt06ReportsFolderId() ด้านล่าง)
+const PT06_TEMPLATE_FILE_ID = "1Txwjtf81EzQVlt5Wx5DWU7e4A4mGBGsx8G6o-K1AxsM";
+
 /**
  * Action ที่จำกัดให้ใช้ได้เฉพาะบางบทบาทเท่านั้น (นอกเหนือจากนี้ = ใช้ได้ทุกคนที่ login แล้ว)
  * อ้างอิงจาก MENU_CONFIG ฝั่งหน้าเว็บ: เมนูที่เห็นเฉพาะ REGISTRAR/ASSISTANT_REGISTRAR
@@ -27,6 +34,7 @@ const ACTION_ROLES = {
   addAcademicYear: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   getSubjects: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   addSubject: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  addSubjectsBulk: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   updateSubject: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   deleteSubject: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   getStudents: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
@@ -49,7 +57,41 @@ const ACTION_ROLES = {
   deleteEnrollment: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   getTeachingAssignmentsPageData: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   addTeachingAssignment: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  addTeachingAssignmentsBulk: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  updateTeachingAssignment: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   deleteTeachingAssignment: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  getGradingPeriods: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  setGradingPeriod: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  setGradingPeriodManualStatus: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  // getGradingPeriodStatus ไม่จำกัดสิทธิ์ไว้โดยตั้งใจ (ทุกบทบาทที่ login แล้วต้องเห็นตัวนับถอยหลังที่ Header ได้)
+  // ด้านล่างนี้มี isAssignedToTeach()/เช็คสิทธิ์เจ้าของข้อมูลอยู่ในตัว handler ทุกตัวอยู่แล้ว (ไม่ใช่ช่องโหว่)
+  // แต่เพิ่มไว้ใน ACTION_ROLES ด้วยเพื่อ defense-in-depth ให้สอดคล้องกับฝั่งครูประจำชั้น/นายทะเบียนด้านล่าง (27 ก.ย. 2569)
+  getGradeSetup: ["SUBJECT_TEACHER"],
+  addGradeSubComponent: ["SUBJECT_TEACHER"],
+  deleteGradeSubComponent: ["SUBJECT_TEACHER"],
+  getGradeEntryPageData: ["SUBJECT_TEACHER"],
+  saveStudentScores: ["SUBJECT_TEACHER"],
+  getFinalizePageData: ["SUBJECT_TEACHER"],
+  submitFinalResults: ["SUBJECT_TEACHER"],
+  withdrawFinalResults: ["SUBJECT_TEACHER"],
+  generateSubjectReport: ["SUBJECT_TEACHER"],
+  getHomeroomSummaryPageData: ["HOMEROOM_TEACHER"],
+  // ปถ.06 มีอยู่ 2 จุดในระบบ: ฝั่งครูประจำชั้น (เฉพาะห้องตนเอง, ไม่มีโหมดพรีวิวแล้ว) และฝั่งนายทะเบียน (ทุกห้อง/ทุกคนในโรงเรียน)
+  getHomeroomStudentReportData: ["HOMEROOM_TEACHER"],
+  generateHomeroomStudentReport: ["HOMEROOM_TEACHER"],
+  generateHomeroomClassReport: ["HOMEROOM_TEACHER"],
+  getPt06StudentReportData: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  generatePt06StudentReport: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  generatePt06ClassReport: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  // กิจกรรมพัฒนาผู้เรียนไม่มีครูประจำวิชาโดยตรง นายทะเบียน/ผู้ช่วยนายทะเบียนเป็นผู้บันทึกผลแทนทั้งระดับชั้น (26 ก.ย. 2569)
+  getActivityResultsPageData: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  getActivityResultMatrix: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  saveActivityResultsBulk: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  // "รายงานสรุปผู้บริหาร" อ่านอย่างเดียว ยังไม่มีปุ่มอนุมัติผลการเรียนระดับสถานศึกษา (จะทำในอนาคต) — 27 ก.ย. 2569
+  getDirectorReportData: ["DIRECTOR"],
+  // หน้าแรกนายทะเบียน: กำกับติดตามความคืบหน้าการบันทึกคะแนนของครูประจำวิชาทุกคน (อ่านอย่างเดียว) — 5 ต.ค. 2569
+  getRegistrarTeacherProgressOverview: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  getTeacherProgressDetail: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
 };
 
 /**
@@ -117,11 +159,14 @@ function doPost(e) {
       case "addSubject":
         result = handleAddSubject(body);
         break;
+      case "addSubjectsBulk":
+        result = handleAddSubjectsBulk(body);
+        break;
       case "updateSubject":
         result = handleUpdateSubject(body);
         break;
       case "deleteSubject":
-        result = handleDeleteSubject(body.subjectId);
+        result = handleDeleteSubject(body);
         break;
       case "getStudents":
         result = handleGetStudents();
@@ -133,7 +178,7 @@ function doPost(e) {
         result = handleUpdateStudent(body);
         break;
       case "deleteStudent":
-        result = handleDeleteStudent(body.studentId);
+        result = handleDeleteStudent(body);
         break;
       case "getUsers":
         result = handleGetUsers();
@@ -157,7 +202,7 @@ function doPost(e) {
         result = handleGetClassesPageData();
         break;
       case "deleteClass":
-        result = handleDeleteClass(body.classId);
+        result = handleDeleteClass(body);
         break;
       case "getEnrollmentsByClass":
         result = handleGetEnrollmentsByClass(body.classId);
@@ -186,8 +231,14 @@ function doPost(e) {
       case "addTeachingAssignment":
         result = handleAddTeachingAssignment(body);
         break;
+      case "addTeachingAssignmentsBulk":
+        result = handleAddTeachingAssignmentsBulk(body);
+        break;
+      case "updateTeachingAssignment":
+        result = handleUpdateTeachingAssignment(body);
+        break;
       case "deleteTeachingAssignment":
-        result = handleDeleteTeachingAssignment(body.teachingAssignmentId);
+        result = handleDeleteTeachingAssignment(body);
         break;
       case "getTeacherSubjectsPageData":
         result = handleGetTeacherSubjectsPageData(body.userId);
@@ -219,7 +270,57 @@ function doPost(e) {
       case "generateSubjectReport":
         result = handleGenerateSubjectReport(body);
         break;
-
+      case "getGradingPeriods":
+        result = handleGetGradingPeriods();
+        break;
+      case "setGradingPeriod":
+        result = handleSetGradingPeriod(body);
+        break;
+      case "setGradingPeriodManualStatus":
+        result = handleSetGradingPeriodManualStatus(body);
+        break;
+      case "getGradingPeriodStatus":
+        result = handleGetGradingPeriodStatus();
+        break;
+      case "getHomeroomSummaryPageData":
+        result = handleGetHomeroomSummaryPageData(body);
+        break;
+      case "getHomeroomStudentReportData":
+        result = handleGetHomeroomStudentReportData(body);
+        break;
+      case "generateHomeroomStudentReport":
+        result = handleGenerateHomeroomStudentReport(body);
+        break;
+      case "generateHomeroomClassReport":
+        result = handleGenerateHomeroomClassReport(body);
+        break;
+      case "getPt06StudentReportData":
+        result = handleGetPt06StudentReportData(body);
+        break;
+      case "generatePt06StudentReport":
+        result = handleGeneratePt06StudentReport(body);
+        break;
+      case "generatePt06ClassReport":
+        result = handleGeneratePt06ClassReport(body);
+        break;
+      case "getActivityResultsPageData":
+        result = handleGetActivityResultsPageData();
+        break;
+      case "getActivityResultMatrix":
+        result = handleGetActivityResultMatrix(body);
+        break;
+      case "saveActivityResultsBulk":
+        result = handleSaveActivityResultsBulk(body);
+        break;
+      case "getDirectorReportData":
+        result = handleGetDirectorReportData(body);
+        break;
+      case "getRegistrarTeacherProgressOverview":
+        result = handleGetRegistrarTeacherProgressOverview(body);
+        break;
+      case "getTeacherProgressDetail":
+        result = handleGetTeacherProgressDetail(body);
+        break;
 
       default:
         result = { status: "error", message: "ไม่รู้จัก action นี้: " + action };
@@ -591,6 +692,97 @@ function handleAddSubject(body) {
   }
 
 /**
+ * เพิ่มรายวิชาหลายรายการพร้อมกัน (นำเข้าจากไฟล์เทมเพลต)
+ * body.subjects = array ของ { subjectId, subjectName, subjectType, subjectGroup, subjectSubGroup, credit, gradeLevel }
+ * - evaluationType คำนวณอัตโนมัติจาก subjectType (เหมือนฝั่งฟอร์มเพิ่มทีละรายการ)
+ * - hours คำนวณอัตโนมัติจาก credit x 40
+ * - แถวที่ข้อมูลไม่ครบ/ไม่ถูกต้อง/ซ้ำ จะถูกข้ามไปและแจ้งเหตุผลกลับไป โดยไม่ทำให้แถวอื่นที่ถูกต้องล้มเหลวไปด้วย
+ */
+function handleAddSubjectsBulk(body) {
+  const inputRows = body.subjects;
+  if (!Array.isArray(inputRows) || inputRows.length === 0) {
+    return { status: "error", message: "ไม่พบข้อมูลรายวิชาที่จะนำเข้า" };
+  }
+
+  const VALID_SUBJECT_TYPES = ["พื้นฐาน", "เพิ่มเติม", "กิจกรรมพัฒนาผู้เรียน"];
+  const VALID_GRADE_LEVELS = ["อนุบาล 1", "อนุบาล 2", "อนุบาล 3", "ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
+
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
+  }
+
+  try {
+    const existingSubjects = getSheetData("Subjects");
+    const existingIds = {};
+    existingSubjects.forEach((s) => (existingIds[String(s.SubjectID).trim()] = true));
+
+    const newRows = [];
+    const skipped = [];
+    const seenInFile = {};
+
+    inputRows.forEach((row, i) => {
+      const rowNum = i + 2; // อ้างอิงเลขแถวในไฟล์ (แถว 1 คือหัวตาราง)
+      const subjectId = String(row.subjectId || "").trim();
+      const subjectName = String(row.subjectName || "").trim();
+      const subjectType = String(row.subjectType || "").trim();
+      const subjectGroup = String(row.subjectGroup || "").trim();
+      const subjectSubGroup = String(row.subjectSubGroup || "").trim();
+      const gradeLevel = String(row.gradeLevel || "").trim();
+      const credit = Number(row.credit) || 0;
+
+      if (!subjectId || !subjectName || !subjectType || !gradeLevel) {
+        skipped.push(`แถว ${rowNum} (${subjectId || "ไม่ระบุรหัส"}): ข้อมูลไม่ครบถ้วน`);
+        return;
+      }
+      if (VALID_SUBJECT_TYPES.indexOf(subjectType) === -1) {
+        skipped.push(`แถว ${rowNum} (${subjectId}): ประเภทวิชาไม่ถูกต้อง`);
+        return;
+      }
+      if (VALID_GRADE_LEVELS.indexOf(gradeLevel) === -1) {
+        skipped.push(`แถว ${rowNum} (${subjectId}): ระดับชั้นไม่ถูกต้อง`);
+        return;
+      }
+      if (existingIds[subjectId]) {
+        skipped.push(`แถว ${rowNum} (${subjectId}): มีรหัสวิชานี้อยู่ในระบบแล้ว`);
+        return;
+      }
+      if (seenInFile[subjectId]) {
+        skipped.push(`แถว ${rowNum} (${subjectId}): รหัสวิชาซ้ำกันในไฟล์`);
+        return;
+      }
+
+      const evaluationType = subjectType === "กิจกรรมพัฒนาผู้เรียน" ? "ผ่าน-ไม่ผ่าน (ผ/มผ)" : "ระดับคะแนน (0-4)";
+      const hours = credit * 40;
+
+      newRows.push([subjectId, subjectName, subjectType, evaluationType, subjectGroup, subjectSubGroup, credit, hours, gradeLevel]);
+      seenInFile[subjectId] = true;
+    });
+
+    if (newRows.length > 0) {
+      const sheet = SS.getSheetByName("Subjects");
+      const lastRow = sheet.getLastRow();
+      sheet.getRange(lastRow + 1, 1, newRows.length, 9).setValues(newRows);
+      CacheService.getScriptCache().remove("subjects");
+    }
+
+    const message =
+      newRows.length > 0
+        ? `นำเข้าสำเร็จ ${newRows.length} รายวิชา` + (skipped.length > 0 ? ` (ข้าม ${skipped.length} รายการ: ${skipped.join(", ")})` : "")
+        : `ไม่สามารถนำเข้ารายวิชาใดได้เลย: ${skipped.join(", ")}`;
+
+    return {
+      status: newRows.length > 0 ? "success" : "error",
+      message: message,
+      data: { addedCount: newRows.length, skipped: skipped },
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
  * แก้ไขข้อมูลรายวิชา (ยึด SubjectID เดิม ไม่ให้แก้ไข)
  */
 function handleUpdateSubject(body) {
@@ -623,7 +815,10 @@ function handleUpdateSubject(body) {
 /**
  * ลบรายวิชา
  */
-function handleDeleteSubject(subjectId) {
+function handleDeleteSubject(body) {
+  const subjectId = typeof body === "object" ? body.subjectId : body;
+  const force = typeof body === "object" && !!body.force;
+
   if (!subjectId) {
     return { status: "error", message: "ไม่พบรหัสวิชาที่ต้องการลบ" };
   }
@@ -631,6 +826,26 @@ function handleDeleteSubject(subjectId) {
   const rowIndex = findRowIndexByColumnValue("Subjects", "SubjectID", subjectId);
   if (rowIndex === -1) {
     return { status: "error", message: "ไม่พบรายวิชานี้ในระบบ" };
+  }
+
+  if (!force) {
+    const assignmentCount = getSheetData("TeachingAssignments").filter((a) => String(a.SubjectID) === String(subjectId)).length;
+    const componentCount = getSheetData("GradeComponents").filter((c) => String(c.SubjectID) === String(subjectId)).length;
+    const scoreCount = getSheetData("StudentScores").filter((s) => String(s.SubjectID) === String(subjectId)).length;
+    const finalResultCount = getSheetData("FinalResults").filter((r) => String(r.SubjectID) === String(subjectId)).length;
+
+    if (assignmentCount > 0 || componentCount > 0 || scoreCount > 0 || finalResultCount > 0) {
+      const parts = [];
+      if (assignmentCount > 0) parts.push(`การมอบหมายการสอน ${assignmentCount} รายการ`);
+      if (componentCount > 0) parts.push(`โครงสร้างคะแนน ${componentCount} รายการ`);
+      if (scoreCount > 0) parts.push(`คะแนนที่กรอกไว้แล้ว ${scoreCount} รายการ`);
+      if (finalResultCount > 0) parts.push(`ผลการเรียนที่ตัดสินแล้ว ${finalResultCount} รายการ`);
+
+      return {
+        status: "confirm_required",
+        message: `รายวิชานี้มี${parts.join(", ")} ผูกอยู่ หากลบวิชานี้ ข้อมูลดังกล่าวจะไม่ถูกลบไปด้วย แต่จะกลายเป็นข้อมูลที่ไม่มีรายวิชาอ้างอิงอยู่ ต้องการดำเนินการลบต่อหรือไม่`,
+      };
+    }
   }
 
   SS.getSheetByName("Subjects").deleteRow(rowIndex);
@@ -730,7 +945,10 @@ function handleUpdateStudent(body) {
 /**
  * ลบนักเรียน
  */
-function handleDeleteStudent(studentId) {
+function handleDeleteStudent(body) {
+  const studentId = typeof body === "object" ? body.studentId : body;
+  const force = typeof body === "object" && !!body.force;
+
   if (!studentId) {
     return { status: "error", message: "ไม่พบเลขประจำตัวนักเรียนที่ต้องการลบ" };
   }
@@ -738,6 +956,24 @@ function handleDeleteStudent(studentId) {
   const rowIndex = findRowIndexByColumnValue("Students", "StudentID", studentId);
   if (rowIndex === -1) {
     return { status: "error", message: "ไม่พบนักเรียนคนนี้ในระบบ" };
+  }
+
+  if (!force) {
+    const enrollmentCount = getSheetData("StudentEnrollments").filter((e) => String(e.StudentID) === String(studentId)).length;
+    const scoreCount = getSheetData("StudentScores").filter((s) => String(s.StudentID) === String(studentId)).length;
+    const finalResultCount = getSheetData("FinalResults").filter((r) => String(r.StudentID) === String(studentId)).length;
+
+    if (enrollmentCount > 0 || scoreCount > 0 || finalResultCount > 0) {
+      const parts = [];
+      if (enrollmentCount > 0) parts.push(`ประวัติการลงทะเบียนเรียน ${enrollmentCount} รายการ`);
+      if (scoreCount > 0) parts.push(`คะแนนที่กรอกไว้แล้ว ${scoreCount} รายการ`);
+      if (finalResultCount > 0) parts.push(`ผลการเรียนที่ตัดสินแล้ว ${finalResultCount} รายการ`);
+
+      return {
+        status: "confirm_required",
+        message: `นักเรียนคนนี้มี${parts.join(", ")} ผูกอยู่ในระบบ หากลบนักเรียนคนนี้ ข้อมูลดังกล่าวจะไม่ถูกลบไปด้วย แต่จะกลายเป็นข้อมูลที่ไม่มีนักเรียนอ้างอิงอยู่ ต้องการดำเนินการลบต่อหรือไม่`,
+      };
+    }
   }
 
   SS.getSheetByName("Students").deleteRow(rowIndex);
@@ -807,7 +1043,7 @@ function handleGetDashboardData(body) {
       (a) => String(a.TeacherUserID) === String(userId) && String(a.AcademicYearID) === String(currentYearId)
     );
 
-    const classes = getSheetData("Classes");
+    const classes = getCachedSheetData("Classes", 60);
     const subjects = handleGetSubjects().data;
     const allComponents = getCachedSheetData("GradeComponents", 120);
     const allSubComponents = getCachedSheetData("GradeSubComponents", 60);
@@ -868,7 +1104,10 @@ function handleGetDashboardData(body) {
 
       return {
         subjectId: a.SubjectID,
-        label: (subj ? subj.SubjectName : a.SubjectID) + " - " + (cls ? cls.GradeLevel + "/" + cls.RoomNumber : a.ClassID),
+        label:
+          (subj ? a.SubjectID + " " + subj.SubjectName : a.SubjectID) +
+          " - " +
+          (cls ? cls.GradeLevel + "/" + cls.RoomNumber : a.ClassID),
         semester1Components: semesterComponents(1),
         semester2Components: semesterComponents(2),
         isSubmittedSem1: isSemesterSubmittedLocal(1),
@@ -876,8 +1115,21 @@ function handleGetDashboardData(body) {
       };
     });
 
-    // การ์ดสรุป: รายวิชา = นับแยกตามรหัสวิชา (ไม่ซ้ำ) ไม่ว่าจะสอนกี่ห้องก็ตาม
-    const distinctSubjectCount = new Set(myAssignments.map((a) => String(a.SubjectID))).size;
+    // การ์ดสรุป: รายวิชาที่สอน แสดง "รหัสวิชา ชื่อรายวิชา" พร้อมห้องที่สอนทุกห้อง (จัดกลุ่มตามรายวิชา ไม่แสดงเป็นตัวเลขเฉยๆ)
+    // จัดกลุ่มด้วย SubjectID (ไม่ใช่ชื่อวิชา) เพื่อกันปัญหาชื่อวิชาซ้ำกันคนละรหัสถูกรวมเป็นแถวเดียวกัน — 26 ก.ย. 2569
+    const subjectClassMap = {};
+    myAssignments.forEach((a) => {
+      const subj = subjects.find((s) => String(s.SubjectID) === String(a.SubjectID));
+      const cls = classes.find((c) => String(c.ClassID) === String(a.ClassID));
+      const subjectId = a.SubjectID;
+      const subjectLabel = subj ? subjectId + " " + subj.SubjectName : subjectId;
+      const classLabel = cls ? cls.GradeLevel + "/" + cls.RoomNumber : a.ClassID;
+      if (!subjectClassMap[subjectId]) subjectClassMap[subjectId] = { name: subjectLabel, classes: [] };
+      if (subjectClassMap[subjectId].classes.indexOf(classLabel) === -1) {
+        subjectClassMap[subjectId].classes.push(classLabel);
+      }
+    });
+    const subjectList = Object.keys(subjectClassMap).map((id) => subjectClassMap[id]);
     // ห้องที่สอน = นับห้องไม่ซ้ำ รวมทุกวิชา
     const distinctClassCount = new Set(myAssignments.map((a) => String(a.ClassID))).size;
     // นักเรียนที่สอน = รวมจำนวนนักเรียนที่ลงทะเบียนของทุกวิชา/ทุกห้องที่สอน (นับซ้ำได้ถ้าสอนหลายวิชาในห้องเดียวกัน)
@@ -888,7 +1140,7 @@ function handleGetDashboardData(body) {
 
     const dashboardResult = {
       cards: [
-        { icon: "fa-book-open", label: "รายวิชาที่สอน", value: distinctSubjectCount + " วิชา" },
+        { icon: "fa-book-open", label: "รายวิชาที่สอน", value: "ยังไม่มีรายวิชาที่สอน", subjectList: subjectList },
         { icon: "fa-chalkboard", label: "ห้องที่สอน", value: distinctClassCount + " ห้อง" },
         { icon: "fa-user-graduate", label: "นักเรียนที่สอน", value: totalStudents + " คน" },
       ],
@@ -910,12 +1162,14 @@ function handleGetDashboardData(body) {
 
   if (role === "HOMEROOM_TEACHER") {
     const academicYears = getSheetData("AcademicYears");
+    academicYears.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
+    // ถ้าไม่มีปีใดถูกตั้งค่าเป็นปีปัจจุบัน (IsCurrent) ให้ fallback ไปใช้ปีล่าสุดแทน (เดิมไม่มี fallback ทำให้นับเป็น 0 ได้)
     const currentYear = academicYears.find(
       (y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE"
-    );
+    ) || academicYears[0];
     const currentYearId = currentYear ? currentYear.AcademicYearID : null;
 
-    const classes = getSheetData("Classes");
+    const classes = getCachedSheetData("Classes", 60);
     const myClasses = classes.filter(
       (c) =>
         String(c.AcademicYearID) === String(currentYearId) &&
@@ -924,33 +1178,139 @@ function handleGetDashboardData(body) {
     );
     const studentCount = myClasses.reduce((sum, c) => sum + (Number(c.StudentCount) || 0), 0);
 
+    // นับรายวิชาที่ถูกมอบหมายให้สอนในห้องที่ตนเป็นครูประจำชั้น (รวมทุกห้องถ้าดูแลมากกว่า 1 ห้อง)
+    // แยกว่าส่งผลการเรียนแล้วหรือยังต่อภาคเรียน (26 ก.ย. 2569 — แทนที่การ์ด "ข้อมูลไม่ครบ"/"เกรดเฉลี่ยห้อง" ที่ยังไม่เปิดใช้งานเดิม)
+    const myClassIds = myClasses.map((c) => String(c.ClassID));
+    const assignmentsInMyClasses = getCachedSheetData("TeachingAssignments", 120).filter(
+      (a) => String(a.AcademicYearID) === String(currentYearId) && myClassIds.indexOf(String(a.ClassID)) !== -1
+    );
+
+    let submittedSem1 = 0;
+    let submittedSem2 = 0;
+    let notSubmittedSem1 = 0;
+    let notSubmittedSem2 = 0;
+    assignmentsInMyClasses.forEach((a) => {
+      if (isSemesterSubmitted(a.SubjectID, currentYearId, a.ClassID, 1)) {
+        submittedSem1++;
+      } else {
+        notSubmittedSem1++;
+      }
+      if (isSemesterSubmitted(a.SubjectID, currentYearId, a.ClassID, 2)) {
+        submittedSem2++;
+      } else {
+        notSubmittedSem2++;
+      }
+    });
+
+    // รายชื่อรายวิชาที่ลงทะเบียนเรียนทั้งหมดของห้อง (ไม่ซ้ำ) เรียงตามลำดับกลุ่มสาระ — 26 ก.ย. 2569
+    // ใช้ตรรกะการเรียงเดียวกับตาราง ปถ.06 (sortSubjectsForPt06Report / SUBJECT_GROUP_ORDER_PT06) เพื่อให้สอดคล้องกันทั้งระบบ
+    const subjectsMaster = handleGetSubjects().data;
+    const assignedSubjectIds = Array.from(new Set(assignmentsInMyClasses.map((a) => String(a.SubjectID))));
+    let subjectListRows = assignedSubjectIds
+      .map((subjectId) => {
+        const subj = subjectsMaster.find((s) => String(s.SubjectID) === subjectId);
+        if (!subj) return null;
+        return {
+          subjectId: subjectId,
+          subjectName: subj.SubjectName,
+          subjectType: subj.SubjectType || "",
+          subjectGroup: subj.SubjectGroup || "",
+        };
+      })
+      .filter(Boolean);
+    subjectListRows = sortSubjectsForPt06Report(subjectListRows);
+
+    // กิจกรรมพัฒนาผู้เรียนที่นายทะเบียนบันทึกผลแล้ว — นับแยกต่างหากจากการ์ดรายวิชาข้างบน เพราะไม่ผ่าน TeachingAssignments
+    // (นายทะเบียน/ผู้ช่วยนายทะเบียนเป็นผู้บันทึกผลแทนที่หน้า "บันทึกผลกิจกรรมพัฒนาผู้เรียน") — 26 ก.ย. 2569
+    // "บันทึกแล้ว" = มีผลอย่างน้อย 1 แถวของห้อง+กิจกรรมนั้นใน ActivityResults (การบันทึกจะบันทึกทั้งห้องพร้อมกันเสมอ)
+    const activitySubjectsAll = getSheetData("Subjects").filter((s) => s.SubjectType === "กิจกรรมพัฒนาผู้เรียน");
+    const activityResultsInMyClasses = getSheetData("ActivityResults").filter(
+      (r) => String(r.AcademicYearID) === String(currentYearId) && myClassIds.indexOf(String(r.ClassID)) !== -1
+    );
+    let activityTotal = 0;
+    let activityRecorded = 0;
+    myClasses.forEach((c) => {
+      activitySubjectsAll
+        .filter((s) => String(s.GradeLevel) === String(c.GradeLevel))
+        .forEach((act) => {
+          activityTotal++;
+          const hasResult = activityResultsInMyClasses.some(
+            (r) => String(r.ClassID) === String(c.ClassID) && String(r.SubjectID) === String(act.SubjectID)
+          );
+          if (hasResult) activityRecorded++;
+        });
+    });
+
     return {
       status: "success",
       data: {
         cards: [
-          { icon: "fa-user-graduate", label: "นักเรียนในห้อง", value: studentCount + " คน" },
-          { icon: "fa-triangle-exclamation", label: "ข้อมูลไม่ครบ", value: "ยังไม่เปิดใช้งาน" },
-          { icon: "fa-chart-line", label: "เกรดเฉลี่ยห้อง", value: "ยังไม่เปิดใช้งาน" },
+          { icon: "fa-user-graduate", label: "จำนวนนักเรียน", value: studentCount + " คน" },
+          {
+            icon: "fa-circle-check",
+            label: "รายวิชาที่ส่งคะแนนแล้ว",
+            value: "ภาคเรียนที่ 1: " + submittedSem1 + " วิชา<br>ภาคเรียนที่ 2: " + submittedSem2 + " วิชา",
+          },
+          {
+            icon: "fa-triangle-exclamation",
+            label: "รายวิชาที่ยังไม่ส่งคะแนน",
+            value: "ภาคเรียนที่ 1: " + notSubmittedSem1 + " วิชา<br>ภาคเรียนที่ 2: " + notSubmittedSem2 + " วิชา",
+          },
+          {
+            icon: "fa-medal",
+            label: "กิจกรรมพัฒนาผู้เรียนที่บันทึกผลแล้ว",
+            value: activityRecorded + " / " + activityTotal + " กิจกรรม",
+          },
         ],
         progress: [],
-        quickActions: [
-          { icon: "fa-user-check", label: "บันทึกเวลาเรียน/กิจกรรมโฮมรูม", href: "homeroom-activity.html" },
-          { icon: "fa-star", label: "ประเมินคุณลักษณะ/อ่านคิดวิเคราะห์", href: "homeroom-evaluation.html" },
-        ],
+        quickActions: [],
+        subjects: subjectListRows,
       },
     };
   }
 
   if (role === "DIRECTOR") {
-    const students = getSheetData("Students");
-    const activeStudents = students.filter((s) => String(s.Status).trim() === "กำลังศึกษา");
+    const academicYears = getSheetData("AcademicYears");
+    academicYears.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
+    // ถ้าไม่มีปีใดถูกตั้งค่าเป็นปีปัจจุบัน (IsCurrent) ให้ fallback ไปใช้ปีล่าสุดแทน (เดิมไม่มี fallback ทำให้นับเป็น 0 ได้)
+    const currentYear = academicYears.find(
+      (y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE"
+    ) || academicYears[0];
+    const currentYearId = currentYear ? currentYear.AcademicYearID : null;
+
+    // นับเฉพาะนักเรียนที่จัดเข้าห้องเรียนแล้วในปีการศึกษาปัจจุบัน (ไม่นับที่ยังไม่ได้จัดห้อง)
+    const enrolledStudentCount = new Set(
+      getCachedSheetData("StudentEnrollments", 60)
+        .filter((e) => String(e.AcademicYearID) === String(currentYearId))
+        .map((e) => String(e.StudentID))
+    ).size;
+
+    // GPAX เฉลี่ยรวมทั้งโรงเรียน (คำนวณแบบเดียวกับหน้า "รายงานสรุปผู้บริหาร" — ตัดกิจกรรมพัฒนาผู้เรียนออกเสมอ) — 27 ก.ย. 2569
+    const classIdsForGpax = getCachedSheetData("Classes", 60)
+      .filter((c) => String(c.AcademicYearID) === String(currentYearId))
+      .map((c) => String(c.ClassID));
+    const subjectsForGpax = handleGetSubjects().data;
+    const evalTypeByIdForGpax = {};
+    subjectsForGpax.forEach((s) => (evalTypeByIdForGpax[String(s.SubjectID)] = s.EvaluationType));
+    const gradedResultsForGpax = getFinalResultsBySchoolYear(currentYearId).filter(
+      (r) =>
+        classIdsForGpax.indexOf(String(r.classId)) !== -1 &&
+        evalTypeByIdForGpax[String(r.subjectId)] !== "ผ่าน-ไม่ผ่าน (ผ/มผ)"
+    );
+    const schoolGpaxForCard =
+      gradedResultsForGpax.length > 0
+        ? (
+            Math.round((gradedResultsForGpax.reduce((sum, r) => sum + r.gradePoint, 0) / gradedResultsForGpax.length) * 100) /
+            100
+          ).toFixed(2)
+        : "ยังไม่มีข้อมูล";
 
     return {
       status: "success",
       data: {
         cards: [
-          { icon: "fa-user-graduate", label: "นักเรียนทั้งหมด", value: activeStudents.length + " คน" },
-          { icon: "fa-chart-line", label: "ผลสัมฤทธิ์เฉลี่ยรวม", value: "ยังไม่เปิดใช้งาน" },
+          { icon: "fa-user-graduate", label: "นักเรียนทั้งหมด", value: enrolledStudentCount + " คน" },
+          { icon: "fa-chart-line", label: "ผลสัมฤทธิ์เฉลี่ยรวม (GPAX)", value: schoolGpaxForCard },
           { icon: "fa-circle-check", label: "อัตราจบการศึกษา", value: "ยังไม่เปิดใช้งาน" },
         ],
         progress: [],
@@ -962,12 +1322,24 @@ function handleGetDashboardData(body) {
   }
 
   // REGISTRAR, ASSISTANT_REGISTRAR
-  const students = getSheetData("Students");
-  const activeStudents = students.filter((s) => String(s.Status).trim() === "กำลังศึกษา");
+  const academicYearsForCount = getSheetData("AcademicYears");
+  academicYearsForCount.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
+  // ถ้าไม่มีปีใดถูกตั้งค่าเป็นปีปัจจุบัน (IsCurrent) ให้ fallback ไปใช้ปีล่าสุดแทน (เดิมไม่มี fallback ทำให้นับเป็น 0 ได้)
+  const currentYearForCount = academicYearsForCount.find(
+    (y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE"
+  ) || academicYearsForCount[0];
+  const currentYearIdForCount = currentYearForCount ? currentYearForCount.AcademicYearID : null;
 
-  const subjects = getSheetData("Subjects");
+  // นับเฉพาะนักเรียนที่จัดเข้าห้องเรียนแล้วในปีการศึกษาปัจจุบัน (ไม่นับที่ยังไม่ได้จัดห้อง)
+  const enrolledStudentCount = new Set(
+    getCachedSheetData("StudentEnrollments", 60)
+      .filter((e) => String(e.AcademicYearID) === String(currentYearIdForCount))
+      .map((e) => String(e.StudentID))
+  ).size;
 
-  const userRoles = getSheetData("UserRoles");
+  const subjects = handleGetSubjects().data;
+
+  const userRoles = getCachedSheetData("UserRoles", 300);
   const teacherUserIds = {};
   userRoles.forEach((r) => {
     if (r.RoleType === "SUBJECT_TEACHER" || r.RoleType === "HOMEROOM_TEACHER") {
@@ -980,7 +1352,7 @@ function handleGetDashboardData(body) {
     status: "success",
     data: {
       cards: [
-        { icon: "fa-user-graduate", label: "นักเรียนทั้งหมด", value: activeStudents.length + " คน" },
+        { icon: "fa-user-graduate", label: "นักเรียนทั้งหมด", value: enrolledStudentCount + " คน" },
         { icon: "fa-book", label: "รายวิชาทั้งหมด", value: subjects.length + " วิชา" },
         { icon: "fa-chalkboard-user", label: "ครูผู้สอนทั้งหมด", value: totalTeachers + " คน" },
         { icon: "fa-clipboard-check", label: "รออนุมัติผลการเรียน", value: "ยังไม่เปิดใช้งาน" },
@@ -995,6 +1367,1858 @@ function handleGetDashboardData(body) {
   };
 }
 
+
+/**
+ * อ่านผลการเรียนสรุปทั้งปีจากชีต FinalResults แบบตำแหน่งคอลัมน์ (ไม่อิงชื่อ Header)
+ * เพราะคอลัมน์ YearScore100/GradePoint ไม่เคยถูกอ่านผ่าน getSheetData() ที่อื่นในระบบมาก่อน
+ * จึงอิงลำดับคอลัมน์ตามที่ syncFinalResultsForYear() เขียนไว้เสมอ (ดูฟังก์ชันนั้นประกอบ):
+ * 0 FinalResultID, 1 StudentID, 2 SubjectID, 3 ClassID, 4 AcademicYearID,
+ * 5 Sem1Raw70, 6 Sem1Exam30, 7 Sem1Total100, 8 Sem2Raw70, 9 Sem2Exam30, 10 Sem2Total100,
+ * 11 YearScore100, 12 GradePoint, 13 ApprovedByUserID, 14 Timestamp
+ */
+function getFinalResultsByClass(classId, academicYearId) {
+  const sheet = SS.getSheetByName("FinalResults");
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+
+  return data
+    .slice(1)
+    .filter((r) => String(r[3]) === String(classId) && String(r[4]) === String(academicYearId))
+    .map((r) => ({
+      studentId: r[1],
+      subjectId: r[2],
+      semester1Raw70: Number(r[5]),
+      semester1Exam30: Number(r[6]),
+      semester1Total100: Number(r[7]),
+      semester2Raw70: Number(r[8]),
+      semester2Exam30: Number(r[9]),
+      semester2Total100: Number(r[10]),
+      yearScore100: Number(r[11]),
+      gradePoint: Number(r[12]),
+    }));
+}
+
+/**
+ * หน้า "สรุปข้อมูลประจำชั้น" (Homeroom Dashboard) สำหรับครูประจำชั้น
+ * แสดงรายชื่อนักเรียนในห้องที่ตนเป็นครูประจำชั้น พร้อมสรุปเกรดเฉลี่ย (GPAX) และความคืบหน้าการส่งผลการเรียนของแต่ละคน
+ * ขอบเขตข้อมูล: เฉพาะห้องเรียนที่ userId เป็น HomeroomTeacherUserID หรือ HomeroomTeacherUserID2 ในปีการศึกษาปัจจุบันเท่านั้น
+ * ถ้าครูประจำชั้น 1 คนดูแลมากกว่า 1 ห้อง ให้เลือกห้องผ่าน body.classId ได้ (ค่าเริ่มต้น = ห้องแรกที่เจอ)
+ */
+function handleGetHomeroomSummaryPageData(body) {
+  const userId = body.userId;
+  const requestedClassId = body.classId;
+
+  const academicYears = getSheetData("AcademicYears");
+  academicYears.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
+  // ถ้าไม่มีปีใดถูกตั้งค่าเป็นปีปัจจุบัน (IsCurrent) ให้ fallback ไปใช้ปีล่าสุดแทน
+  const currentYear = academicYears.find(
+    (y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE"
+  ) || academicYears[0];
+  const currentYearId = currentYear ? currentYear.AcademicYearID : null;
+
+  const classes = getCachedSheetData("Classes", 60);
+  const myClasses = classes.filter(
+    (c) =>
+      String(c.AcademicYearID) === String(currentYearId) &&
+      (String(c.HomeroomTeacherUserID) === String(userId) || String(c.HomeroomTeacherUserID2) === String(userId))
+  );
+
+  if (myClasses.length === 0) {
+    return {
+      status: "success",
+      data: { classOptions: [], selectedClassId: null, classLabel: "", cards: [], students: [] },
+    };
+  }
+
+  const selectedClassId =
+    requestedClassId && myClasses.some((c) => String(c.ClassID) === String(requestedClassId))
+      ? requestedClassId
+      : myClasses[0].ClassID;
+  const selectedClass = myClasses.find((c) => String(c.ClassID) === String(selectedClassId));
+
+  const classOptions = myClasses.map((c) => ({
+    classId: c.ClassID,
+    label: c.GradeLevel + "/" + c.RoomNumber,
+  }));
+
+  const enrollments = getCachedSheetData("StudentEnrollments", 60).filter(
+    (e) => String(e.ClassID) === String(selectedClassId)
+  );
+  const students = getSheetData("Students");
+  const subjects = handleGetSubjects().data;
+  const assignments = getCachedSheetData("TeachingAssignments", 120).filter(
+    (a) => String(a.ClassID) === String(selectedClassId) && String(a.AcademicYearID) === String(currentYearId)
+  );
+
+  // นับเฉพาะรายวิชาที่ประเมินแบบ "ระดับคะแนน (0-4)" สำหรับคำนวณเกรดเฉลี่ย (GPAX) ตามมาตรฐาน
+  // ไม่รวมกิจกรรมพัฒนาผู้เรียนที่ประเมินแบบผ่าน/ไม่ผ่าน เพราะไม่มีความหมายเป็นค่าเกรด 0-4
+  const gradedSubjectIds = new Set(
+    assignments
+      .map((a) => String(a.SubjectID))
+      .filter((subjectId) => {
+        const subj = subjects.find((s) => String(s.SubjectID) === subjectId);
+        return subj && subj.EvaluationType !== "ผ่าน-ไม่ผ่าน (ผ/มผ)";
+      })
+  );
+  const totalGradedSubjects = gradedSubjectIds.size;
+
+  const finalResults = getFinalResultsByClass(selectedClassId, currentYearId).filter((r) =>
+    gradedSubjectIds.has(String(r.subjectId))
+  );
+
+  const studentRows = enrollments
+    .map((e) => {
+      const st = students.find((s) => String(s.StudentID) === String(e.StudentID)) || {};
+      const myFinalResults = finalResults.filter((r) => String(r.studentId) === String(e.StudentID));
+      const gpax =
+        myFinalResults.length > 0
+          ? myFinalResults.reduce((sum, r) => sum + r.gradePoint, 0) / myFinalResults.length
+          : null;
+
+      return {
+        studentId: e.StudentID,
+        studentNumber: Number(e.StudentNumber) || 0,
+        fullName: (st.PrefixName || "") + (st.FirstName || "") + " " + (st.LastName || ""),
+        gpax: gpax !== null ? Math.round(gpax * 100) / 100 : null,
+        completedSubjects: myFinalResults.length,
+        totalSubjects: totalGradedSubjects,
+      };
+    })
+    .sort((a, b) => a.studentNumber - b.studentNumber);
+
+  const completeCount = studentRows.filter(
+    (s) => s.totalSubjects > 0 && s.completedSubjects === s.totalSubjects
+  ).length;
+  const gpaxValues = studentRows.filter((s) => s.gpax !== null).map((s) => s.gpax);
+  const classAvgGpax =
+    gpaxValues.length > 0
+      ? (Math.round((gpaxValues.reduce((a, b) => a + b, 0) / gpaxValues.length) * 100) / 100).toFixed(2)
+      : "-";
+
+  const cards = [
+    { icon: "fa-user-graduate", label: "นักเรียนในห้อง", value: studentRows.length + " คน" },
+    { icon: "fa-chart-line", label: "เกรดเฉลี่ยห้อง (GPAX)", value: classAvgGpax },
+    { icon: "fa-circle-check", label: "ผลการเรียนสมบูรณ์", value: completeCount + " / " + studentRows.length + " คน" },
+  ];
+
+  return {
+    status: "success",
+    data: {
+      classOptions: classOptions,
+      selectedClassId: selectedClassId,
+      classLabel: selectedClass.GradeLevel + "/" + selectedClass.RoomNumber,
+      cards: cards,
+      students: studentRows,
+    },
+  };
+}
+
+/**
+ * คำนวณคะแนนสรุปภาคเรียนของ "นักเรียน 1 คน" ในวิชา/ห้อง/ปี/ภาคเรียนที่ระบุ โดยไม่เช็คว่าผู้เรียกเป็นครูผู้สอนวิชานี้หรือไม่
+ * (ต่างจาก handleGetGradeSetup/buildFinalizeData ที่สงวนไว้สำหรับครูประจำวิชาเจ้าของวิชานั้นเท่านั้น)
+ * ใช้สำหรับหน้ารายงาน ปถ.06 ที่ต้องดูภาพรวมผลการเรียนทุกวิชาของนักเรียน 1 คน แม้จะไม่ได้เป็นผู้สอนวิชานั้นก็ตาม
+ * คืนค่า null ถ้ายังไม่เคยตั้งค่าช่องเก็บคะแนน (GradeComponents) ของวิชา/ภาคเรียนนี้เลย (แปลว่าวิชานี้ยังไม่เริ่มกรอกคะแนน)
+ *
+ * scoresForStudentPreloaded (ไม่บังคับ) = แถวคะแนนของ "นักเรียนคนนี้คนเดียว" จากชีต StudentScores ที่อ่านมาไว้ล่วงหน้าแล้ว (ทุกวิชา/ทุกภาคเรียนของห้อง/ปีนี้)
+ * ใส่มาเพื่อไม่ต้องอ่านทั้งชีต StudentScores ซ้ำทุกครั้งที่ฟังก์ชันนี้ถูกเรียก — เดิม (ก่อน 26 ก.ย. 2569) ฟังก์ชันนี้อ่านทั้งชีตเองทุกครั้ง
+ * ถูกเรียกซ้ำถึง 2 ครั้ง/วิชา (ภาคเรียนที่ 1 และ 2) ในลูปของหน้ารายงาน ปถ.06 ทำให้ห้องที่มีหลายรายวิชาโหลดช้ามาก
+ * ถ้าไม่ส่งพารามิเตอร์นี้มา จะ fallback ไปอ่านทั้งชีตเองเหมือนเดิม (ยังใช้งานได้ปกติ เผื่อมีจุดเรียกอื่นในอนาคต)
+ */
+function computeSemesterResultForStudent(subjectId, academicYearId, classId, semester, studentId, scoresForStudentPreloaded) {
+  const components = getCachedSheetData("GradeComponents", 120).filter(
+    (c) =>
+      String(c.SubjectID) === String(subjectId) &&
+      String(c.AcademicYearID) === String(academicYearId) &&
+      Number(c.Semester) === Number(semester)
+  );
+  if (components.length === 0) return null;
+
+  const componentsWithSub = components.map((c) => {
+    if (c.ComponentType === "ปลายภาค") return Object.assign({}, c, { componentId: c.ComponentID, maxScore: c.MaxScore });
+    const subComponents = getCachedSheetData("GradeSubComponents", 60)
+      .filter((sc) => String(sc.ComponentID) === String(c.ComponentID))
+      .map((sc) => ({ subComponentId: sc.SubComponentID, maxScore: sc.MaxScore }));
+    return Object.assign({}, c, { componentId: c.ComponentID, maxScore: c.MaxScore, subComponents: subComponents });
+  });
+
+  const scoresSource = scoresForStudentPreloaded || getSheetData("StudentScores");
+  const scoresForStudent = scoresSource.filter(
+    (sc) =>
+      String(sc.ClassID) === String(classId) &&
+      String(sc.SubjectID) === String(subjectId) &&
+      String(sc.AcademicYearID) === String(academicYearId) &&
+      String(sc.Semester) === String(semester) &&
+      String(sc.StudentID) === String(studentId)
+  );
+
+  const scoresMap = {};
+  scoresForStudent.forEach((sc) => {
+    const key = sc.StudentID + "|" + sc.ComponentID + "|" + (sc.SubComponentID || "");
+    scoresMap[key] = sc.Score;
+  });
+
+  const componentsForCalc = componentsWithSub.map((c) => ({
+    componentType: c.ComponentType,
+    componentId: c.componentId,
+    maxScore: c.maxScore,
+    subComponents: c.subComponents,
+  }));
+
+  return computeSemesterScores(componentsForCalc, scoresMap, studentId);
+}
+
+// ลำดับกลุ่มสาระการเรียนรู้ ตามดรอปดาวน์ในหน้าจัดการหลักสูตร/รายวิชา (subjects-manage.html #f-subjectGroup)
+// ใช้จัดเรียงตารางรายวิชาในหน้ารายงาน ปถ.06 ให้ตรงตามลำดับที่โรงเรียนใช้งานจริง ไม่ใช่เรียงตามตัวอักษร
+const SUBJECT_GROUP_ORDER_PT06 = [
+  "ภาษาไทย",
+  "คณิตศาสตร์",
+  "วิทยาศาสตร์และเทคโนโลยี",
+  "สังคมศึกษา ศาสนาและวัฒนธรรม",
+  "สุขศึกษาและพลศึกษา",
+  "ศิลปะ",
+  "การงานอาชีพ",
+  "ภาษาต่างประเทศ",
+];
+const SUBJECT_TYPE_ORDER_PT06 = ["พื้นฐาน", "เพิ่มเติม", "กิจกรรมพัฒนาผู้เรียน"];
+
+/**
+ * จัดเรียงรายวิชาสำหรับแสดงผล/ออกรายงาน ปถ.06: พื้นฐาน -> เพิ่มเติม -> กิจกรรมพัฒนาผู้เรียน
+ * ภายในประเภทเดียวกัน เรียงตามลำดับกลุ่มสาระการเรียนรู้ (SUBJECT_GROUP_ORDER_PT06)
+ * วิชาที่ไม่พบในลิสต์ลำดับ (กลุ่ม/ประเภทที่ตั้งไว้ไม่ตรงกับลิสต์) จะถูกจัดไว้ท้ายสุดของกลุ่มนั้น ไม่หายไปจากตาราง
+ */
+function sortSubjectsForPt06Report(rows) {
+  return rows.slice().sort((a, b) => {
+    const typeA = SUBJECT_TYPE_ORDER_PT06.indexOf(a.subjectType);
+    const typeB = SUBJECT_TYPE_ORDER_PT06.indexOf(b.subjectType);
+    const typeDiff = (typeA === -1 ? 99 : typeA) - (typeB === -1 ? 99 : typeB);
+    if (typeDiff !== 0) return typeDiff;
+
+    const groupA = SUBJECT_GROUP_ORDER_PT06.indexOf(a.subjectGroup);
+    const groupB = SUBJECT_GROUP_ORDER_PT06.indexOf(b.subjectGroup);
+    const groupDiff = (groupA === -1 ? 99 : groupA) - (groupB === -1 ? 99 : groupB);
+    if (groupDiff !== 0) return groupDiff;
+
+    return String(a.subjectId).localeCompare(String(b.subjectId));
+  });
+}
+
+/**
+ * รวบรวมข้อมูลผลการเรียนทุกวิชาของนักเรียน 1 คน (แกนหลักที่ใช้ร่วมกันทั้ง 2 จุดที่มีหน้า "ออกรายงาน ปถ.06" ในระบบ)
+ * รับ "cls" (แถวห้องเรียนที่ผ่านการตรวจสิทธิ์/เลือกมาแล้ว) เพื่อไม่ต้องเช็คสิทธิ์ซ้ำในนี้ — ผู้เรียก (buildHomeroomStudentReportData
+ * สำหรับครูประจำชั้น หรือ buildPt06StudentReportData สำหรับนายทะเบียน) เป็นผู้รับผิดชอบหาแถวห้องเรียนที่ถูกต้องตามขอบเขตสิทธิ์ของตนก่อนเรียกฟังก์ชันนี้
+ * คืนค่า { error: "..." } ถ้าไม่พบข้อมูล มิฉะนั้นคืนค่า { academicYear, cls, student, enrollment, subjectRows, gpax }
+ */
+// พารามิเตอร์ preloaded (ไม่บังคับ) : ใช้เมื่อจะเรียกฟังก์ชันนี้วนซ้ำหลายนักเรียนในห้องเดียวกัน (เช่น ออกรายงานทั้งห้อง)
+// เพื่อให้อ่านชีตที่ไม่ได้ขึ้นกับตัวนักเรียนแต่ละคน (AcademicYears/Students/ActivityResults/StudentScores/FinalResults)
+// "ครั้งเดียว" นอกลูปแล้วส่งเข้ามา แทนที่จะอ่านทั้งชีตซ้ำทุกคน ทำให้รายงานทั้งห้องช้ามาก — 27 ก.ย. 2569
+// รูปแบบ: { academicYears, students, finalResultsByClass, activityResultsByClass, studentScoresByClass }
+// ถ้าไม่ส่งมา (เรียกดูรายบุคคลตามปกติ) พฤติกรรมเดิมทุกประการ (อ่านชีตสดทุกครั้ง)
+function buildPt06ReportCore(cls, studentId, preloaded) {
+  const academicYearId = cls.AcademicYearID;
+  const academicYearsList = preloaded && preloaded.academicYears ? preloaded.academicYears : getSheetData("AcademicYears");
+  const academicYear = academicYearsList.find((y) => String(y.AcademicYearID) === String(academicYearId));
+  const classId = cls.ClassID;
+
+  const enrollment = getCachedSheetData("StudentEnrollments", 60).find(
+    (e) => String(e.ClassID) === String(classId) && String(e.StudentID) === String(studentId)
+  );
+  if (!enrollment) {
+    return { error: "ไม่พบนักเรียนคนนี้ในห้องเรียนนี้" };
+  }
+
+  const studentsList = preloaded && preloaded.students ? preloaded.students : getSheetData("Students");
+  const student = studentsList.find((s) => String(s.StudentID) === String(studentId));
+  if (!student) {
+    return { error: "ไม่พบข้อมูลนักเรียนคนนี้ในระบบ" };
+  }
+
+  const subjects = handleGetSubjects().data;
+  const assignments = getCachedSheetData("TeachingAssignments", 120).filter(
+    (a) => String(a.ClassID) === String(classId) && String(a.AcademicYearID) === String(academicYearId)
+  );
+  // กิจกรรมพัฒนาผู้เรียนไม่ผูกกับ TeachingAssignments อีกต่อไป (นายทะเบียนบันทึกผลเองผ่าน ActivityResults แทน — 26 ก.ย. 2569)
+  // จึงตัดออกจากรายการที่มาจากการมอบหมายสอน แล้วไปเพิ่มเป็นแถวแยกต่างหากด้านล่างแทน กันข้อมูลมอบหมายเก่าตกค้างซ้ำซ้อนด้วย
+  const assignedSubjectIds = Array.from(new Set(assignments.map((a) => String(a.SubjectID)))).filter((subjectId) => {
+    const subj = subjects.find((s) => String(s.SubjectID) === subjectId);
+    return !subj || subj.SubjectType !== "กิจกรรมพัฒนาผู้เรียน";
+  });
+
+  // ชื่อครูผู้สอนของแต่ละวิชา (ในห้อง/ปีการศึกษานี้) — ใช้แสดงใต้ชื่อรายวิชาในตาราง ปถ.06 บนหน้าเว็บ (ไม่ใช้ในไฟล์ PDF) — 26 ก.ย. 2569
+  // รองรับกรณีสอนร่วมกันมากกว่า 1 คนต่อวิชา โดยรวมชื่อด้วย ", "
+  const usersForTeacherName = getCachedSheetData("Users", 300);
+
+  const finalResults = (
+    preloaded && preloaded.finalResultsByClass
+      ? preloaded.finalResultsByClass
+      : getFinalResultsByClass(classId, academicYearId)
+  ).filter((r) => String(r.studentId) === String(studentId));
+
+  // อ่านชีต StudentScores ของนักเรียนคนนี้ "ครั้งเดียว" ไว้ล่วงหน้า แล้วส่งต่อให้ computeSemesterResultForStudent() ใช้ซ้ำในลูปด้านล่าง
+  // (แก้ปัญหาเดิมที่อ่านทั้งชีตซ้ำทุกวิชา/ทุกภาคเรียนที่ยังไม่สรุปผล ทำให้ห้องที่มีหลายรายวิชาเปิดดูรายงานช้ามาก — 26 ก.ย. 2569)
+  const studentScores = (
+    preloaded && preloaded.studentScoresByClass
+      ? preloaded.studentScoresByClass.filter((sc) => String(sc.StudentID) === String(studentId))
+      : getSheetData("StudentScores").filter(
+          (sc) => String(sc.ClassID) === String(classId) && String(sc.StudentID) === String(studentId)
+        )
+  );
+
+  let subjectRows = assignedSubjectIds
+    .map((subjectId) => {
+      const subj = subjects.find((s) => String(s.SubjectID) === subjectId);
+      if (!subj) return null;
+
+      const isSubmittedSem1 = isSemesterSubmitted(subjectId, academicYearId, classId, 1);
+      const isSubmittedSem2 = isSemesterSubmitted(subjectId, academicYearId, classId, 2);
+      const finalRow = finalResults.find((r) => String(r.subjectId) === subjectId);
+
+      let semester1Raw70 = null;
+      let semester1Exam30 = null;
+      let semester1Total100 = null;
+      let semester2Raw70 = null;
+      let semester2Exam30 = null;
+      let semester2Total100 = null;
+      let yearScore100 = null;
+      let gradePoint = null;
+
+      if (isSubmittedSem1 && isSubmittedSem2 && finalRow) {
+        // ส่งครบทั้งปีแล้ว -> ใช้ค่าที่บันทึกไว้เป็นทางการใน FinalResults (ไม่คำนวณซ้ำ)
+        semester1Raw70 = finalRow.semester1Raw70;
+        semester1Exam30 = finalRow.semester1Exam30;
+        semester1Total100 = finalRow.semester1Total100;
+        semester2Raw70 = finalRow.semester2Raw70;
+        semester2Exam30 = finalRow.semester2Exam30;
+        semester2Total100 = finalRow.semester2Total100;
+        yearScore100 = finalRow.yearScore100;
+        gradePoint = finalRow.gradePoint;
+      } else {
+        // ยังส่งไม่ครบทั้งปี -> คำนวณเฉพาะภาคเรียนที่ส่งแล้วให้ดูเป็นข้อมูลล่าสุด (ไม่ใช่ผลอย่างเป็นทางการ)
+        if (isSubmittedSem1) {
+          const sem1 = computeSemesterResultForStudent(subjectId, academicYearId, classId, 1, studentId, studentScores);
+          if (sem1) {
+            semester1Raw70 = sem1.raw70;
+            semester1Exam30 = sem1.exam30;
+            semester1Total100 = sem1.total100;
+          }
+        }
+        if (isSubmittedSem2) {
+          const sem2 = computeSemesterResultForStudent(subjectId, academicYearId, classId, 2, studentId, studentScores);
+          if (sem2) {
+            semester2Raw70 = sem2.raw70;
+            semester2Exam30 = sem2.exam30;
+            semester2Total100 = sem2.total100;
+          }
+        }
+      }
+
+      const teacherNamesForSubject = Array.from(
+        new Set(
+          assignments
+            .filter((a) => String(a.SubjectID) === subjectId)
+            .map((a) => String(a.TeacherUserID))
+        )
+      )
+        .map((uid) => {
+          const u = usersForTeacherName.find((usr) => String(usr.UserID) === uid);
+          return u ? u.FullName : "";
+        })
+        .filter(Boolean);
+
+      return {
+        subjectId: subjectId,
+        subjectName: subj.SubjectName,
+        subjectType: subj.SubjectType || "",
+        subjectGroup: subj.SubjectGroup || "",
+        teacherName: teacherNamesForSubject.join(", "),
+        credit: Number(subj.Credit) || 0,
+        hours: Number(subj.Hours) || 0,
+        evaluationType: subj.EvaluationType,
+        semester1Raw70: semester1Raw70,
+        semester1Exam30: semester1Exam30,
+        semester1Total100: semester1Total100,
+        semester2Raw70: semester2Raw70,
+        semester2Exam30: semester2Exam30,
+        semester2Total100: semester2Total100,
+        yearScore100: yearScore100,
+        gradePoint: gradePoint,
+        isSubmittedSem1: isSubmittedSem1,
+        isSubmittedSem2: isSubmittedSem2,
+      };
+    })
+    .filter(Boolean);
+
+  // กิจกรรมพัฒนาผู้เรียนของระดับชั้นนี้ (ตามข้อ 4 ที่ตกลงกับผู้ใช้: ไม่มีครูประจำวิชา นายทะเบียนบันทึกผลเองผ่านหน้า
+  // "บันทึกผลกิจกรรมพัฒนาผู้เรียน" แยกต่างหาก) — แสดงทุกกิจกรรมของระดับชั้นเสมอไม่ว่าจะบันทึกผลแล้วหรือยัง
+  // ประเมินรายปี ไม่มีคะแนน/ภาคเรียน จึงโชว์ช่องคะแนนทั้งหมดเป็น "-" (semester1/2/yearScore = null, gradePoint = null)
+  // และไม่นำผล ผ/มผ ไปคิด GPAX (กรองออกด้วย evaluationType อยู่แล้วด้านล่าง) — 26 ก.ย. 2569
+  const activityResultsForStudent = (
+    preloaded && preloaded.activityResultsByClass
+      ? preloaded.activityResultsByClass.filter((r) => String(r.StudentID) === String(studentId))
+      : getSheetData("ActivityResults").filter(
+          (r) => String(r.ClassID) === String(classId) && String(r.StudentID) === String(studentId)
+        )
+  );
+  const activityRows = subjects
+    .filter((s) => s.SubjectType === "กิจกรรมพัฒนาผู้เรียน" && String(s.GradeLevel) === String(cls.GradeLevel))
+    .map((subj) => {
+      const found = activityResultsForStudent.find((r) => String(r.SubjectID) === String(subj.SubjectID));
+      return {
+        subjectId: subj.SubjectID,
+        subjectName: subj.SubjectName,
+        subjectType: subj.SubjectType || "",
+        subjectGroup: subj.SubjectGroup || "",
+        teacherName: "",
+        credit: Number(subj.Credit) || 0,
+        hours: Number(subj.Hours) || 0,
+        evaluationType: subj.EvaluationType,
+        semester1Raw70: null,
+        semester1Exam30: null,
+        semester1Total100: null,
+        semester2Raw70: null,
+        semester2Exam30: null,
+        semester2Total100: null,
+        yearScore100: null,
+        gradePoint: null,
+        activityResult: found ? found.Result : null,
+        isSubmittedSem1: false,
+        isSubmittedSem2: false,
+      };
+    });
+
+  subjectRows = subjectRows.concat(activityRows);
+  subjectRows = sortSubjectsForPt06Report(subjectRows);
+
+  // GPAX รวม: เฉลี่ยเฉพาะรายวิชาที่ประเมินแบบระดับคะแนน (0-4) และมีผลการเรียนครบทั้งปีแล้วเท่านั้น
+  const gradedCompleted = subjectRows.filter(
+    (r) => r.evaluationType !== "ผ่าน-ไม่ผ่าน (ผ/มผ)" && r.gradePoint !== null
+  );
+  const gpax =
+    gradedCompleted.length > 0
+      ? Math.round((gradedCompleted.reduce((sum, r) => sum + r.gradePoint, 0) / gradedCompleted.length) * 100) / 100
+      : null;
+
+  return {
+    academicYear: academicYear,
+    cls: cls,
+    student: student,
+    enrollment: enrollment,
+    subjectRows: subjectRows,
+    gpax: gpax,
+  };
+}
+
+/**
+ * รวบรวมข้อมูลผลการเรียนทุกวิชาของนักเรียน 1 คน — สำหรับหน้า "ออกรายงาน ปถ.06" ฝั่งครูประจำชั้น
+ * ขอบเขตสิทธิ์: ต้องเป็นครูประจำชั้นของ classId นั้นจริง (ในปีการศึกษาปัจจุบันของระบบ) และ studentId ต้องลงทะเบียนอยู่ในห้องนั้นจริง
+ * คืนค่า { error: "..." } ถ้าไม่มีสิทธิ์/ไม่พบข้อมูล มิฉะนั้นคืนค่า { academicYear, cls, student, enrollment, subjectRows, gpax }
+ */
+function buildHomeroomStudentReportData(userId, classId, studentId, preloaded) {
+  const academicYears = preloaded && preloaded.academicYears ? preloaded.academicYears : getSheetData("AcademicYears");
+  if (!preloaded || !preloaded.academicYears) {
+    academicYears.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
+  }
+  const currentYear = academicYears.find(
+    (y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE"
+  ) || academicYears[0];
+  const currentYearId = currentYear ? currentYear.AcademicYearID : null;
+
+  const classes = getCachedSheetData("Classes", 60);
+  const cls = classes.find(
+    (c) =>
+      String(c.ClassID) === String(classId) &&
+      String(c.AcademicYearID) === String(currentYearId) &&
+      (String(c.HomeroomTeacherUserID) === String(userId) || String(c.HomeroomTeacherUserID2) === String(userId))
+  );
+  if (!cls) {
+    return { error: "คุณไม่มีสิทธิ์เข้าถึงข้อมูลห้องเรียนนี้" };
+  }
+
+  return buildPt06ReportCore(cls, studentId, preloaded);
+}
+
+/**
+ * รวบรวมข้อมูลผลการเรียนทุกวิชาของนักเรียน 1 คน — สำหรับหน้า "ออกรายงาน ปถ.06" ฝั่งนายทะเบียน/ผู้ช่วยนายทะเบียน
+ * ขอบเขตสิทธิ์: เข้าถึงได้ทุกห้อง/ทุกคนในโรงเรียน (ไม่จำกัดว่าต้องเป็นครูประจำชั้นของห้องนั้น)
+ * ปีการศึกษาที่ใช้คำนวณ = ปีการศึกษาของ "ห้องเรียน (classId)" นั้นเอง (ไม่ใช่ปีปัจจุบันของระบบ) เพื่อให้ออกรายงานของห้องเรียนปีการศึกษาก่อนๆ ได้ถูกต้องด้วย
+ * คืนค่า { error: "..." } ถ้าไม่พบข้อมูล มิฉะนั้นคืนค่า { academicYear, cls, student, enrollment, subjectRows, gpax }
+ */
+function buildPt06StudentReportData(classId, studentId, preloaded) {
+  const cls = getCachedSheetData("Classes", 60).find((c) => String(c.ClassID) === String(classId));
+  if (!cls) {
+    return { error: "ไม่พบห้องเรียนนี้ในระบบ" };
+  }
+  return buildPt06ReportCore(cls, studentId, preloaded);
+}
+
+/**
+ * หน้า "ออกรายงาน ปถ.06" (รายงานผลการเรียนทุกวิชาของนักเรียนรายบุคคล) สำหรับครูประจำชั้น
+ * แสดงผลการเรียนทุกวิชาที่ห้องเรียนถูกมอบหมายให้เรียนในปีการศึกษาปัจจุบัน ของนักเรียน 1 คนที่เลือก
+ * (เนื้อหาข้อมูลคำนวณที่ buildHomeroomStudentReportData() แล้ว เพื่อใช้ร่วมกับการออกรายงาน PDF)
+ */
+function handleGetHomeroomStudentReportData(body) {
+  const userId = body.userId;
+  const classId = body.classId;
+  const studentId = body.studentId;
+
+  if (!classId || !studentId) {
+    return { status: "error", message: "กรุณาเลือกห้องเรียนและนักเรียน" };
+  }
+
+  const result = buildHomeroomStudentReportData(userId, classId, studentId);
+  if (result.error) {
+    return { status: "error", message: result.error };
+  }
+
+  return {
+    status: "success",
+    data: {
+      academicYearLabel: result.academicYear ? result.academicYear.Year : "",
+      classLabel: result.cls.GradeLevel + "/" + result.cls.RoomNumber,
+      student: {
+        studentId: result.student.StudentID,
+        studentNumber: result.enrollment.StudentNumber,
+        fullName: (result.student.PrefixName || "") + (result.student.FirstName || "") + " " + (result.student.LastName || ""),
+      },
+      subjects: result.subjectRows,
+      gpax: result.gpax,
+    },
+  };
+}
+
+/**
+ * หน้า "ออกรายงาน ปถ.06" (รายงานผลการเรียนทุกวิชาของนักเรียนรายบุคคล) ในระบบนายทะเบียน/ผู้ช่วยนายทะเบียน
+ * แสดงผลการเรียนทุกวิชาที่ห้องเรียนนั้นถูกมอบหมายให้เรียนในปีการศึกษาของห้องนั้น ของนักเรียน 1 คนที่เลือก (เลือกได้ทุกห้อง/ทุกคนในโรงเรียน)
+ * (เนื้อหาข้อมูลคำนวณที่ buildPt06StudentReportData() แล้ว เพื่อใช้ร่วมกับการออกรายงาน PDF)
+ */
+function handleGetPt06StudentReportData(body) {
+  const classId = body.classId;
+  const studentId = body.studentId;
+
+  if (!classId || !studentId) {
+    return { status: "error", message: "กรุณาเลือกห้องเรียนและนักเรียน" };
+  }
+
+  const result = buildPt06StudentReportData(classId, studentId);
+  if (result.error) {
+    return { status: "error", message: result.error };
+  }
+
+  return {
+    status: "success",
+    data: {
+      academicYearLabel: result.academicYear ? result.academicYear.Year : "",
+      classLabel: result.cls.GradeLevel + "/" + result.cls.RoomNumber,
+      student: {
+        studentId: result.student.StudentID,
+        studentNumber: result.enrollment.StudentNumber,
+        fullName: (result.student.PrefixName || "") + (result.student.FirstName || "") + " " + (result.student.LastName || ""),
+      },
+      subjects: result.subjectRows,
+      gpax: result.gpax,
+    },
+  };
+}
+
+/**
+ * เตรียมข้อมูลแถวสำหรับพิมพ์ลงเทมเพลต ปถ.06 (เวอร์ชัน 2 — ตารางแยกคอลัมน์ภาคเรียนที่ 1/ภาคเรียนที่ 2/สรุปผลปลายปีในตารางเดียวกัน)
+ * ไม่มีแนวคิด "รอบการออกรายงาน" แยกอีกต่อไป (ตัด reportScope ออก) เพราะเทมเพลตนี้ออกแบบให้แสดง "สถานะจริง ณ ตอนออกรายงาน" เสมอ:
+ * - ยังไม่ส่งภาคเรียนที่ 1 -> คอลัมน์ภาคเรียนที่ 1 เป็น "-"
+ * - ส่งภาคเรียนที่ 1 แล้วแต่ภาคเรียนที่ 2 ยังไม่ส่ง -> คอลัมน์ภาคเรียนที่ 1 มีค่า, ภาคเรียนที่ 2/สรุปปลายปี เป็น "-"
+ * - ส่งครบทั้ง 2 ภาคเรียน -> แสดงครบทุกคอลัมน์ รวมถึงคอลัมน์ "สรุปผลปลายปี" (เฉลี่ยภาค 1+2 เหมือนแผงสถิติของรายงาน ปถ.05)
+ * จึงไม่ต้องปฏิเสธการออกรายงานอีกต่อไปไม่ว่าจะกรอกคะแนนไปถึงไหน
+ * คืนค่า { rows, gpa, basicCreditTotal/Earned, extraCreditTotal/Earned }
+ *
+ * อัปเดต (26 ก.ย. 2569): คอลัมน์ "ระดับผลการเรียน" ของกิจกรรมพัฒนาผู้เรียน เปลี่ยนมาใช้ผล ผ/มผ จริงที่นายทะเบียนบันทึกไว้
+ * ผ่านหน้า "บันทึกผลกิจกรรมพัฒนาผู้เรียน" (เก็บใน ActivityResults) แทน workaround เดิมที่แปลงจาก gradePoint > 0
+ */
+function buildPt06PrintRows(subjectRows) {
+  const rows = subjectRows.map((s) => {
+    const isActivity = s.evaluationType === "ผ่าน-ไม่ผ่าน (ผ/มผ)";
+    const bothSubmitted = s.isSubmittedSem1 && s.isSubmittedSem2;
+
+    // สรุปผลปลายปี: เฉลี่ยระหว่างภาค (เต็ม 70) และปลายภาค (เต็ม 30) ของภาคเรียนที่ 1+2 ตามสูตรเดียวกับแผงสถิติของรายงาน ปถ.05
+    let yearRaw70 = null;
+    let yearExam30 = null;
+    let yearTotal100 = null;
+    let gradePoint = null;
+
+    if (bothSubmitted && s.semester1Raw70 !== null && s.semester2Raw70 !== null) {
+      yearRaw70 = (Number(s.semester1Raw70) + Number(s.semester2Raw70)) / 2;
+      yearExam30 = (Number(s.semester1Exam30) + Number(s.semester2Exam30)) / 2;
+      yearTotal100 = s.yearScore100 !== null && s.yearScore100 !== undefined ? Number(s.yearScore100) : yearRaw70 + yearExam30;
+      gradePoint = s.gradePoint !== null && s.gradePoint !== undefined ? Number(s.gradePoint) : scoreToGradePoint(yearTotal100);
+    }
+
+    return {
+      subject: s,
+      isActivity: isActivity,
+      activityResult: s.activityResult || null,
+      sem1Raw70: s.isSubmittedSem1 ? s.semester1Raw70 : null,
+      sem1Exam30: s.isSubmittedSem1 ? s.semester1Exam30 : null,
+      sem1Total100: s.isSubmittedSem1 ? s.semester1Total100 : null,
+      sem2Raw70: s.isSubmittedSem2 ? s.semester2Raw70 : null,
+      sem2Exam30: s.isSubmittedSem2 ? s.semester2Exam30 : null,
+      sem2Total100: s.isSubmittedSem2 ? s.semester2Total100 : null,
+      yearRaw70: yearRaw70,
+      yearExam30: yearExam30,
+      yearTotal100: yearTotal100,
+      gradePoint: gradePoint,
+    };
+  });
+
+  // หน่วยกิต: "ที่เรียน" = นับทุกวิชาพื้นฐาน/เพิ่มเติมที่มอบหมาย (กิจกรรมพัฒนาผู้เรียนไม่มีหน่วยกิต)
+  // "ที่ได้" = นับเฉพาะวิชาที่สรุปผลปลายปีแล้วและ gradePoint > 0 (สอบผ่านจริง ไม่นับกรณีเกรด 0 หรือยังไม่สรุปผล)
+  const basicRows = rows.filter((r) => r.subject.subjectType === "พื้นฐาน");
+  const extraRows = rows.filter((r) => r.subject.subjectType === "เพิ่มเติม");
+  const sumCredit = (arr) => arr.reduce((sum, r) => sum + (Number(r.subject.credit) || 0), 0);
+  const sumEarnedCredit = (arr) =>
+    arr.reduce((sum, r) => sum + (r.gradePoint > 0 ? Number(r.subject.credit) || 0 : 0), 0);
+
+  // GPA: เฉลี่ยเฉพาะวิชาที่ประเมินแบบระดับคะแนน (ไม่รวมกิจกรรมพัฒนาผู้เรียน) และสรุปผลปลายปีแล้ว ตามมาตรฐานเดียวกับ GPAX หน้าจอสรุปข้อมูลประจำชั้น
+  const gradedRows = rows.filter((r) => !r.isActivity && r.gradePoint !== null && r.gradePoint !== undefined);
+  const gpa =
+    gradedRows.length > 0
+      ? Math.round((gradedRows.reduce((sum, r) => sum + r.gradePoint, 0) / gradedRows.length) * 100) / 100
+      : null;
+
+  return {
+    rows: rows,
+    gpa: gpa,
+    basicCreditTotal: sumCredit(basicRows),
+    basicCreditEarned: sumEarnedCredit(basicRows),
+    extraCreditTotal: sumCredit(extraRows),
+    extraCreditEarned: sumEarnedCredit(extraRows),
+  };
+}
+
+/**
+ * คืนค่า Folder ID สำหรับเก็บ PDF รายงาน ปถ.06 — แยกจากโฟลเดอร์รายงาน ปถ.05 ตามที่ผู้ใช้ต้องการ
+ * สร้างโฟลเดอร์ใหม่อัตโนมัติในการใช้งานครั้งแรก แล้วจดจำ ID ไว้ใน Script Properties เพื่อใช้ซ้ำในครั้งถัดไป
+ * (ไม่ต้องให้ผู้ดูแลระบบสร้าง/หา Folder ID เอง)
+ */
+function getPt06ReportsFolderId() {
+  const props = PropertiesService.getScriptProperties();
+  const saved = props.getProperty("PT06_REPORTS_FOLDER_ID");
+  if (saved) {
+    try {
+      DriveApp.getFolderById(saved);
+      return saved;
+    } catch (err) {
+      // โฟลเดอร์เดิมถูกลบไปแล้ว สร้างใหม่แทนด้านล่าง
+    }
+  }
+
+  const folder = DriveApp.createFolder("W-Score รายงาน ปถ.06");
+  props.setProperty("PT06_REPORTS_FOLDER_ID", folder.getId());
+  return folder.getId();
+}
+
+/**
+ * ประมาณขนาดฟอนต์ที่เล็กที่สุดเท่าที่จำเป็น เพื่อให้ข้อความยาวๆ พอดีกับความกว้างคอลัมน์จริง (พิกเซล) แบบเดียวกับ "Shrink to fit"
+ * Google Sheets ยังไม่มีฟีเจอร์นี้ให้ใช้ตรงๆ ผ่าน Apps Script จึงประมาณเองจากความยาวตัวอักษรเทียบความกว้างคอลัมน์
+ * baseFontSize = ขนาดฟอนต์เดิมของเทมเพลต (เพดานสูงสุด ไม่มีการขยายให้ใหญ่กว่านี้) ลดทีละ 0.5pt จนพอดีหรือถึงขั้นต่ำ 6pt
+ */
+function fitFontSizeToColumnWidth(text, columnWidthPx, baseFontSize) {
+  const minFontSize = 6;
+  const avgCharWidthPerPt = 0.62; // ประมาณความกว้างเฉลี่ยของตัวอักษร (พิกเซล) ต่อฟอนต์ 1pt สำหรับฟอนต์ไทยความกว้างปานกลาง
+  const paddingPx = 6; // เผื่อ padding ซ้าย-ขวาของเซลล์
+  // สระบน/ล่างและวรรณยุกต์ภาษาไทย (เช่น ั ิ ี ึ ื ุ ู ่ ้ ๊ ๋ ็ ์) ซ้อนอยู่บน/ล่างตัวอักษรหลัก ไม่ได้เพิ่มความกว้างแนวนอนจริง
+  // ถ้านับรวมเป็นความยาวปกติจะประเมินความกว้างข้อความเกินจริงมาก (ข้อความไทยมีเครื่องหมายพวกนี้แทบทุกคำ) ทำให้ย่อฟอนต์เล็กเกินความจำเป็น
+  // จึงตัดออกก่อนนับความยาวเพื่อประเมินความกว้างที่ใกล้เคียงความจริงมากขึ้น — 26 ก.ย. 2569
+  const THAI_COMBINING_MARKS = /[ัิ-ฺ็-๎]/g;
+
+  const text2 = String(text || "").replace(THAI_COMBINING_MARKS, "");
+  if (text2.length === 0) return baseFontSize;
+
+  const availableWidth = Math.max(columnWidthPx - paddingPx, 10);
+  let fontSize = baseFontSize;
+  while (fontSize > minFontSize && text2.length * fontSize * avgCharWidthPerPt > availableWidth) {
+    fontSize -= 0.25;
+  }
+  return fontSize;
+}
+
+/**
+ * กรอกข้อมูลนักเรียน 1 คนลงชีตเทมเพลต ปถ.06 ที่คัดลอกมาแล้ว (sheet = สำเนาของชีต "ปพ.6")
+ * เทมเพลตเวอร์ชันนี้ (26 ก.ย. 2569, id เทมเพลต 1Txwjtf81EzQVlt5Wx5DWU7e4A4mGBGsx8G6o-K1AxsM) มีตารางคอลัมน์ A-P:
+ * แถว 3 (merge A3:P3) = ชั้น/ปีการศึกษา, แถว 4 (merge A4:P4) = ชื่อ/เลขประจำตัว/ห้อง/เลขที่ (เซลล์ยึด = A ไม่ใช่ C)
+ * A ลำดับ, B รหัสวิชา, C รายวิชา(merge C:D), E ประเภท, F เวลา,
+ * G-I ภาคเรียนที่ 1 (ระหว่างภาค/ปลายภาค/รวม), J-L ภาคเรียนที่ 2 (ระหว่างภาค/ปลายภาค/รวม),
+ * M-P สรุปผลปลายปี (ระหว่างภาค/ปลายภาค/รวม/ระดับผลการเรียน)
+ * ตารางเริ่มแถว 8 เผื่อไว้ 22 แถว (8-29) — แทรกแถวเพิ่มอัตโนมัติถ้ารายวิชาเกิน แล้วเลื่อนส่วนสรุปผลลงตามจำนวนแถวที่แทรก
+ * printed = ผลลัพธ์จาก buildPt06PrintRows()
+ */
+function fillPt06Sheet(sheet, student, enrollment, cls, academicYear, printed) {
+  const TEMPLATE_FIRST_DATA_ROW = 8;
+  const TEMPLATE_LAST_DATA_ROW = 29; // เผื่อไว้ 22 แถว (8-29) ในเทมเพลตต้นฉบับ
+  const TEMPLATE_PROVISIONED_ROWS = TEMPLATE_LAST_DATA_ROW - TEMPLATE_FIRST_DATA_ROW + 1;
+
+  const neededRows = printed.rows.length;
+  let rowOffset = 0;
+  if (neededRows > TEMPLATE_PROVISIONED_ROWS) {
+    rowOffset = neededRows - TEMPLATE_PROVISIONED_ROWS;
+    sheet.insertRowsAfter(TEMPLATE_LAST_DATA_ROW, rowOffset);
+  }
+
+  const gradeLevelNumber = String(cls.GradeLevel).replace(/[^0-9]/g, "") || cls.GradeLevel;
+  const gradeLevelLabel =
+    String(cls.GradeLevel).indexOf("อนุบาล") === 0
+      ? "ชั้นอนุบาลปีที่ " + gradeLevelNumber
+      : "ชั้นประถมศึกษาปีที่ " + gradeLevelNumber;
+
+  // ----- ส่วนหัว (A2 = ชื่อโรงเรียน เป็นข้อความคงที่ในเทมเพลตอยู่แล้ว ไม่ต้องเขียนทับ) -----
+  // แก้ไข 26 ก.ย. 2569: ตรวจสอบไฟล์เทมเพลตจริงที่ผู้ใช้แนบมาใหม่ พบว่าเซลล์ยึด (anchor) ของแถวที่ 3/4 คือ A3/A4
+  // (merge เต็มแถว A3:P3 และ A4:P4) ไม่ใช่ C3/C4 ตามที่เข้าใจไว้เดิม จึงทำให้ข้อมูลจริงเขียนลงเซลล์ที่ถูกซ่อนใต้ merge
+  // และค่าตัวอย่างเดิมที่ค้างอยู่ใน A3/A4 (เซลล์ยึดจริง) ถูกแสดงผลแทนเสมอไม่ว่าจะเขียนอะไรลง C3/C4 ก็ตาม
+  sheet.getRange("A3").setValue(gradeLevelLabel + "  ปีการศึกษา " + academicYear.Year);
+  sheet
+    .getRange("A4")
+    .setValue(
+      "ชื่อ   " +
+        (student.PrefixName || "") + (student.FirstName || "") + " " + (student.LastName || "") +
+        "     เลขประจำตัว   " + student.StudentID +
+        "     ห้อง   " + cls.RoomNumber +
+        "     เลขที่   " + enrollment.StudentNumber
+    );
+
+  // ----- ตารางรายวิชา (เริ่มแถว 8, คอลัมน์ A-P รวม 16 คอลัมน์) -----
+  const fmt = (v) => (v === null || v === undefined ? "-" : Number(Number(v).toFixed(2)));
+  const dataRows = printed.rows.map((r, i) => {
+    const s = r.subject;
+    const isActivity = r.isActivity;
+    const finalGradeCell = isActivity
+      ? r.activityResult || "-"
+      : r.gradePoint === null || r.gradePoint === undefined
+      ? "-"
+      : r.gradePoint;
+    // ประเภทกิจกรรมพัฒนาผู้เรียน แสดงย่อเป็น "กิจกรรม" ในตาราง (ข้อความเต็มยาวเกินคอลัมน์) — 26 ก.ย. 2569
+    const typeCell = isActivity ? "กิจกรรม" : s.subjectType;
+    // เวลา (ชั่วโมง) คำนวณตามปกติจากหน่วยกิตเหมือนรายวิชาทั่วไป ไม่เว้นว่างสำหรับกิจกรรมอีกต่อไป — 26 ก.ย. 2569
+    const hoursCell = s.hours;
+
+    return [
+      i + 1,
+      isActivity ? "" : s.subjectId,
+      s.subjectName,
+      "",
+      typeCell,
+      hoursCell,
+      fmt(r.sem1Raw70),
+      fmt(r.sem1Exam30),
+      fmt(r.sem1Total100),
+      fmt(r.sem2Raw70),
+      fmt(r.sem2Exam30),
+      fmt(r.sem2Total100),
+      fmt(r.yearRaw70),
+      fmt(r.yearExam30),
+      fmt(r.yearTotal100),
+      finalGradeCell,
+    ];
+  });
+  sheet.getRange(TEMPLATE_FIRST_DATA_ROW, 1, dataRows.length, 16).setValues(dataRows);
+
+  // ปรับย่อขนาดฟอนต์อัตโนมัติเฉพาะคอลัมน์ "รายวิชา" (C:D) ถ้าข้อความยาวเกินความกว้างคอลัมน์จริง
+  // (Apps Script ยังไม่มีฟีเจอร์ "Shrink to fit" ให้ใช้ตรงๆ จึงประมาณขนาดฟอนต์จากความยาวตัวอักษรเทียบความกว้างคอลัมน์เอง
+  // อ้างอิงขนาดฟอนต์เดิมของเทมเพลตเป็นเพดานสูงสุด ไม่ขยายให้ใหญ่กว่าที่เทมเพลตตั้งไว้)
+  // คอลัมน์ "ประเภท" ไม่ต้องย่อ (ข้อความสั้นพอดีคอลัมน์อยู่แล้วเสมอ ตามที่ผู้ใช้ต้องการ) — 26 ก.ย. 2569
+  const subjectColWidthPx = sheet.getColumnWidth(3) + sheet.getColumnWidth(4); // C:D merge = คอลัมน์ "รายวิชา"
+  const baseSubjectFontSize = sheet.getRange(TEMPLATE_FIRST_DATA_ROW, 3).getFontSize() || 10;
+
+  dataRows.forEach((rowValues, i) => {
+    const rowNum = TEMPLATE_FIRST_DATA_ROW + i;
+    sheet.getRange(rowNum, 3).setFontSize(fitFontSizeToColumnWidth(rowValues[2], subjectColWidthPx, baseSubjectFontSize));
+  });
+
+  // ----- สรุปผลการประเมิน (เลื่อนลงตาม rowOffset ถ้ามีการแทรกแถวด้านบน) -----
+  sheet.getRange(33 + rowOffset, 5).setValue(printed.basicCreditTotal);
+  sheet.getRange(33 + rowOffset, 6).setValue(printed.basicCreditEarned);
+  sheet.getRange(34 + rowOffset, 5).setValue(printed.extraCreditTotal);
+  sheet.getRange(34 + rowOffset, 6).setValue(printed.extraCreditEarned);
+  sheet.getRange(35 + rowOffset, 5).setValue(printed.basicCreditTotal + printed.extraCreditTotal);
+  sheet.getRange(35 + rowOffset, 6).setValue(printed.basicCreditEarned + printed.extraCreditEarned);
+  sheet.getRange(36 + rowOffset, 5).setValue(printed.gpa !== null ? printed.gpa : "-");
+  // E37 (คุณลักษณะอันพึงประสงค์) / E38 (อ่านคิดวิเคราะห์เขียน) / E39 (ผลกิจกรรมพัฒนาผู้เรียนภาพรวม)
+  // ยังไม่มีแหล่งข้อมูลในระบบ (รอโมดูลประเมินคุณลักษณะที่จะพัฒนาในอนาคต) — เว้นว่างไว้ตามที่ตกลงกับผู้ใช้ ไม่เขียนทับค่าเดิมในเทมเพลต
+}
+
+/**
+ * ออกรายงาน ปถ.06 รายบุคคล (PDF) สำหรับนักเรียน 1 คน ในห้องที่ตนเองเป็นครูประจำชั้น
+ * แสดงสถานะจริง ณ ตอนออกรายงาน (ภาคเรียนที่ 1/2/สรุปปลายปี คอลัมน์ไหนยังไม่ส่งผลจะเป็น "-" อัตโนมัติ ไม่ต้องเลือกรอบการออกรายงาน)
+ * ไม่มีโหมดพรีวิวอีกต่อไป (ตัดออกตามที่ผู้ใช้ต้องการ)
+ */
+function handleGenerateHomeroomStudentReport(body) {
+  const userId = body.userId;
+  const classId = body.classId;
+  const studentId = body.studentId;
+
+  if (!classId || !studentId) {
+    return { status: "error", message: "กรุณาเลือกห้องเรียนและนักเรียน" };
+  }
+
+  if (!PT06_TEMPLATE_FILE_ID || PT06_TEMPLATE_FILE_ID.indexOf("ใส่_") === 0) {
+    return { status: "error", message: "ระบบยังไม่ได้ตั้งค่าไฟล์เทมเพลต ปถ.06 กรุณาติดต่อผู้ดูแลระบบ" };
+  }
+
+  const built = buildHomeroomStudentReportData(userId, classId, studentId);
+  if (built.error) {
+    return { status: "error", message: built.error };
+  }
+  if (built.subjectRows.length === 0) {
+    return { status: "error", message: "ห้องเรียนนี้ยังไม่มีการมอบหมายรายวิชาในปีการศึกษาปัจจุบัน" };
+  }
+
+  const printed = buildPt06PrintRows(built.subjectRows);
+
+  const fileName =
+    "ปถ06_" +
+    studentId +
+    "_" +
+    built.student.FirstName +
+    built.student.LastName +
+    "_ป." +
+    String(built.cls.GradeLevel).replace(/[^0-9]/g, "") +
+    "-" +
+    built.cls.RoomNumber +
+    "_" +
+    built.academicYear.Year;
+
+  const reportsFolder = DriveApp.getFolderById(getPt06ReportsFolderId());
+  const templateFile = DriveApp.getFileById(PT06_TEMPLATE_FILE_ID);
+  const copyFile = templateFile.makeCopy(fileName, reportsFolder);
+
+  try {
+    const reportSs = SpreadsheetApp.openById(copyFile.getId());
+    const sheet = reportSs.getSheets()[0];
+    fillPt06Sheet(sheet, built.student, built.enrollment, built.cls, built.academicYear, printed);
+    SpreadsheetApp.flush();
+
+    const exportUrl =
+      "https://docs.google.com/spreadsheets/d/" +
+      copyFile.getId() +
+      "/export?format=pdf&size=A4&portrait=true&scale=4&top_margin=0.25&bottom_margin=0.25&left_margin=0.25&right_margin=0.25&horizontal_alignment=CENTER&vertical_alignment=TOP&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false";
+    const pdfResponse = UrlFetchApp.fetch(exportUrl, {
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    });
+
+    if (pdfResponse.getResponseCode() !== 200) {
+      return { status: "error", message: "ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง" };
+    }
+
+    const pdfBlob = pdfResponse.getBlob().setName(fileName + ".pdf");
+    const pdfFile = reportsFolder.createFile(pdfBlob);
+    const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+
+    return {
+      status: "success",
+      data: { fileName: fileName + ".pdf", driveUrl: pdfFile.getUrl(), base64: base64 },
+    };
+  } finally {
+    copyFile.setTrashed(true);
+  }
+}
+
+/**
+ * ออกรายงาน ปถ.06 รวมทั้งห้อง (PDF ไฟล์เดียว, นักเรียน 1 คน = 1 หน้า เรียงตามเลขที่) — แบบ A ตามที่ผู้ใช้เลือก สำหรับครูประจำชั้น
+ * ทำโดยคัดลอกชีตเทมเพลตซ้ำในไฟล์สำเนาเดียวกันทีละคน (คัดลอกจากต้นฉบับที่ยังว่างอยู่ให้ครบทุกคนก่อน แล้วค่อยกรอกข้อมูล
+ * เพื่อไม่ให้สำเนาของคนถัดไปติดข้อมูลของคนก่อนหน้าไปด้วย) แล้ว export ทั้งไฟล์เป็น PDF รวมในครั้งเดียว ไม่มีโหมดพรีวิวอีกต่อไป
+ */
+function handleGenerateHomeroomClassReport(body) {
+  const userId = body.userId;
+  const classId = body.classId;
+
+  if (!classId) {
+    return { status: "error", message: "กรุณาเลือกห้องเรียน" };
+  }
+
+  if (!PT06_TEMPLATE_FILE_ID || PT06_TEMPLATE_FILE_ID.indexOf("ใส่_") === 0) {
+    return { status: "error", message: "ระบบยังไม่ได้ตั้งค่าไฟล์เทมเพลต ปถ.06 กรุณาติดต่อผู้ดูแลระบบ" };
+  }
+
+  const summary = handleGetHomeroomSummaryPageData({ userId: userId, classId: classId });
+  if (summary.status !== "success" || summary.data.students.length === 0) {
+    return { status: "error", message: "ไม่พบนักเรียนในห้องเรียนนี้ หรือคุณไม่มีสิทธิ์เข้าถึง" };
+  }
+
+  const students = summary.data.students.slice().sort((a, b) => a.studentNumber - b.studentNumber);
+
+  if (students.length > 60) {
+    return { status: "error", message: "จำนวนนักเรียนในห้องมากเกินกว่าที่ระบบรองรับต่อการออกรายงาน 1 ครั้ง (สูงสุด 60 คน)" };
+  }
+
+  // เตรียมข้อมูลของนักเรียนทุกคนก่อน (ถ้ามีคนที่ไม่มีสิทธิ์เข้าถึง/ไม่พบข้อมูลจริงๆ ให้แจ้งเตือนและไม่ออกรายงานทั้งห้อง
+  // ส่วนกรณีวิชายังส่งผลไม่ครบไม่ถือเป็นปัญหาอีกต่อไป เพราะเทมเพลตแสดง "-" ในคอลัมน์ที่ยังไม่มีข้อมูลได้เองแล้ว)
+  // เตรียมข้อมูลที่ไม่ได้ขึ้นกับตัวนักเรียนแต่ละคน "ครั้งเดียว" ไว้ล่วงหน้าก่อนวนลูป (แก้ปัญหาอ่านทั้งชีตซ้ำทุกคนในห้อง
+  // ทำให้ออกรายงานทั้งห้องช้ามาก — 27 ก.ย. 2569) : หา currentYearId ด้วยวิธีเดียวกับ buildHomeroomStudentReportData เป๊ะ
+  const academicYearsPreload = getSheetData("AcademicYears");
+  academicYearsPreload.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
+  const currentYearPreload =
+    academicYearsPreload.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE") ||
+    academicYearsPreload[0];
+  const currentYearIdPreload = currentYearPreload ? currentYearPreload.AcademicYearID : null;
+  const preloaded = {
+    academicYears: academicYearsPreload,
+    students: getSheetData("Students"),
+    finalResultsByClass: getFinalResultsByClass(classId, currentYearIdPreload),
+    activityResultsByClass: getSheetData("ActivityResults").filter((r) => String(r.ClassID) === String(classId)),
+    studentScoresByClass: getSheetData("StudentScores").filter((sc) => String(sc.ClassID) === String(classId)),
+  };
+
+  const perStudent = [];
+  const studentsWithIssue = [];
+
+  students.forEach((s) => {
+    const built = buildHomeroomStudentReportData(userId, classId, s.studentId, preloaded);
+    if (built.error) {
+      studentsWithIssue.push(s.fullName + " (" + built.error + ")");
+      return;
+    }
+    const printed = buildPt06PrintRows(built.subjectRows);
+    perStudent.push({ built: built, printed: printed });
+  });
+
+  if (studentsWithIssue.length > 0) {
+    return {
+      status: "error",
+      message: "ไม่สามารถออกรายงานรวมทั้งห้องได้ เนื่องจากมีนักเรียนที่เข้าถึงข้อมูลไม่ได้: " + studentsWithIssue.join("; "),
+    };
+  }
+
+  const cls = perStudent[0].built.cls;
+  const academicYear = perStudent[0].built.academicYear;
+  const fileName =
+    "ปถ06_รวมห้อง_ป." +
+    String(cls.GradeLevel).replace(/[^0-9]/g, "") +
+    "-" +
+    cls.RoomNumber +
+    "_" +
+    academicYear.Year;
+
+  const reportsFolder = DriveApp.getFolderById(getPt06ReportsFolderId());
+  const templateFile = DriveApp.getFileById(PT06_TEMPLATE_FILE_ID);
+  const copyFile = templateFile.makeCopy(fileName, reportsFolder);
+
+  try {
+    const reportSs = SpreadsheetApp.openById(copyFile.getId());
+    const templateSheet = reportSs.getSheets()[0];
+    const templateSheetName = templateSheet.getName();
+
+    // ขั้นที่ 1: คัดลอกชีตเปล่าให้ครบทุกคนก่อน (ยังไม่กรอกข้อมูล) เพื่อไม่ให้สำเนาคนหลังติดข้อมูลของคนก่อนหน้า
+    const sheets = perStudent.map((entry, idx) =>
+      idx === 0 ? templateSheet : templateSheet.copyTo(reportSs).setName(templateSheetName + "_" + (idx + 1))
+    );
+
+    // ขั้นที่ 2: ค่อยกรอกข้อมูลแต่ละคนลงชีตของตัวเอง
+    sheets.forEach((sheet, idx) => {
+      const entry = perStudent[idx];
+      fillPt06Sheet(sheet, entry.built.student, entry.built.enrollment, entry.built.cls, entry.built.academicYear, entry.printed);
+    });
+
+    SpreadsheetApp.flush();
+
+    const exportUrl =
+      "https://docs.google.com/spreadsheets/d/" +
+      copyFile.getId() +
+      "/export?format=pdf&size=A4&portrait=true&scale=4&top_margin=0.25&bottom_margin=0.25&left_margin=0.25&right_margin=0.25&horizontal_alignment=CENTER&vertical_alignment=TOP&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false";
+    const pdfResponse = UrlFetchApp.fetch(exportUrl, {
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    });
+
+    if (pdfResponse.getResponseCode() !== 200) {
+      return { status: "error", message: "ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง" };
+    }
+
+    const pdfBlob = pdfResponse.getBlob().setName(fileName + ".pdf");
+    const pdfFile = reportsFolder.createFile(pdfBlob);
+    const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+
+    return {
+      status: "success",
+      data: { fileName: fileName + ".pdf", driveUrl: pdfFile.getUrl(), base64: base64, studentCount: perStudent.length },
+    };
+  } finally {
+    copyFile.setTrashed(true);
+  }
+}
+
+/**
+ * ออกรายงาน ปถ.06 รายบุคคล (PDF) สำหรับนักเรียน 1 คน — ใช้ในระบบนายทะเบียน/ผู้ช่วยนายทะเบียน เลือกได้ทุกห้อง/ทุกคนในโรงเรียน
+ * แสดงสถานะจริง ณ ตอนออกรายงาน (ภาคเรียนที่ 1/2/สรุปปลายปี คอลัมน์ไหนยังไม่ส่งผลจะเป็น "-" อัตโนมัติ ไม่ต้องเลือกรอบการออกรายงาน)
+ */
+function handleGeneratePt06StudentReport(body) {
+  const classId = body.classId;
+  const studentId = body.studentId;
+
+  if (!classId || !studentId) {
+    return { status: "error", message: "กรุณาเลือกห้องเรียนและนักเรียน" };
+  }
+
+  if (!PT06_TEMPLATE_FILE_ID || PT06_TEMPLATE_FILE_ID.indexOf("ใส่_") === 0) {
+    return { status: "error", message: "ระบบยังไม่ได้ตั้งค่าไฟล์เทมเพลต ปถ.06 กรุณาติดต่อผู้ดูแลระบบ" };
+  }
+
+  const built = buildPt06StudentReportData(classId, studentId);
+  if (built.error) {
+    return { status: "error", message: built.error };
+  }
+  if (built.subjectRows.length === 0) {
+    return { status: "error", message: "ห้องเรียนนี้ยังไม่มีการมอบหมายรายวิชาในปีการศึกษานี้" };
+  }
+
+  const printed = buildPt06PrintRows(built.subjectRows);
+
+  const fileName =
+    "ปถ06_" +
+    studentId +
+    "_" +
+    built.student.FirstName +
+    built.student.LastName +
+    "_ป." +
+    String(built.cls.GradeLevel).replace(/[^0-9]/g, "") +
+    "-" +
+    built.cls.RoomNumber +
+    "_" +
+    built.academicYear.Year;
+
+  const reportsFolder = DriveApp.getFolderById(getPt06ReportsFolderId());
+  const templateFile = DriveApp.getFileById(PT06_TEMPLATE_FILE_ID);
+  const copyFile = templateFile.makeCopy(fileName, reportsFolder);
+
+  try {
+    const reportSs = SpreadsheetApp.openById(copyFile.getId());
+    const sheet = reportSs.getSheets()[0];
+    fillPt06Sheet(sheet, built.student, built.enrollment, built.cls, built.academicYear, printed);
+    SpreadsheetApp.flush();
+
+    const exportUrl =
+      "https://docs.google.com/spreadsheets/d/" +
+      copyFile.getId() +
+      "/export?format=pdf&size=A4&portrait=true&scale=4&top_margin=0.25&bottom_margin=0.25&left_margin=0.25&right_margin=0.25&horizontal_alignment=CENTER&vertical_alignment=TOP&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false";
+    const pdfResponse = UrlFetchApp.fetch(exportUrl, {
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    });
+
+    if (pdfResponse.getResponseCode() !== 200) {
+      return { status: "error", message: "ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง" };
+    }
+
+    const pdfBlob = pdfResponse.getBlob().setName(fileName + ".pdf");
+    const pdfFile = reportsFolder.createFile(pdfBlob);
+    const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+
+    return {
+      status: "success",
+      data: { fileName: fileName + ".pdf", driveUrl: pdfFile.getUrl(), base64: base64 },
+    };
+  } finally {
+    copyFile.setTrashed(true);
+  }
+}
+
+/**
+ * ออกรายงาน ปถ.06 รวมทั้งห้อง (PDF ไฟล์เดียว, นักเรียน 1 คน = 1 หน้า เรียงตามเลขที่) — แบบ A ตามที่ผู้ใช้เลือก
+ * ใช้ในระบบนายทะเบียน/ผู้ช่วยนายทะเบียน เลือกได้ทุกห้องในโรงเรียน (ใช้รายชื่อจาก handleGetEnrollmentsByClass ซึ่งเรียงตามเลขที่อยู่แล้ว)
+ * ทำโดยคัดลอกชีตเทมเพลตซ้ำในไฟล์สำเนาเดียวกันทีละคน (คัดลอกจากต้นฉบับที่ยังว่างอยู่ให้ครบทุกคนก่อน แล้วค่อยกรอกข้อมูล
+ * เพื่อไม่ให้สำเนาของคนถัดไปติดข้อมูลของคนก่อนหน้าไปด้วย) แล้ว export ทั้งไฟล์เป็น PDF รวมในครั้งเดียว
+ */
+function handleGeneratePt06ClassReport(body) {
+  const classId = body.classId;
+
+  if (!classId) {
+    return { status: "error", message: "กรุณาเลือกห้องเรียน" };
+  }
+
+  if (!PT06_TEMPLATE_FILE_ID || PT06_TEMPLATE_FILE_ID.indexOf("ใส่_") === 0) {
+    return { status: "error", message: "ระบบยังไม่ได้ตั้งค่าไฟล์เทมเพลต ปถ.06 กรุณาติดต่อผู้ดูแลระบบ" };
+  }
+
+  const enrollResult = handleGetEnrollmentsByClass(classId);
+  if (enrollResult.status !== "success" || enrollResult.data.length === 0) {
+    return { status: "error", message: "ไม่พบนักเรียนในห้องเรียนนี้" };
+  }
+
+  const students = enrollResult.data; // เรียงตามเลขที่แล้วจาก handleGetEnrollmentsByClass
+
+  if (students.length > 60) {
+    return { status: "error", message: "จำนวนนักเรียนในห้องมากเกินกว่าที่ระบบรองรับต่อการออกรายงาน 1 ครั้ง (สูงสุด 60 คน)" };
+  }
+
+  // เตรียมข้อมูลของนักเรียนทุกคนก่อน (ถ้ามีคนที่ไม่พบข้อมูลจริงๆ ให้แจ้งเตือนและไม่ออกรายงานทั้งห้อง
+  // ส่วนกรณีวิชายังส่งผลไม่ครบไม่ถือเป็นปัญหาอีกต่อไป เพราะเทมเพลตแสดง "-" ในคอลัมน์ที่ยังไม่มีข้อมูลได้เองแล้ว)
+  // เตรียมข้อมูลที่ไม่ได้ขึ้นกับตัวนักเรียนแต่ละคน "ครั้งเดียว" ไว้ล่วงหน้าก่อนวนลูป (แก้ปัญหาอ่านทั้งชีตซ้ำทุกคนในห้อง
+  // ทำให้ออกรายงานทั้งห้องช้ามาก — 27 ก.ย. 2569) : ใช้ปีการศึกษาของห้องเรียนนี้เอง (ไม่ใช่ปีปัจจุบันของระบบ) ตามพฤติกรรมเดิม
+  const clsForPreload = getCachedSheetData("Classes", 60).find((c) => String(c.ClassID) === String(classId));
+  const preloaded = clsForPreload
+    ? {
+        academicYears: getSheetData("AcademicYears"),
+        students: getSheetData("Students"),
+        finalResultsByClass: getFinalResultsByClass(classId, clsForPreload.AcademicYearID),
+        activityResultsByClass: getSheetData("ActivityResults").filter((r) => String(r.ClassID) === String(classId)),
+        studentScoresByClass: getSheetData("StudentScores").filter((sc) => String(sc.ClassID) === String(classId)),
+      }
+    : null;
+
+  const perStudent = [];
+  const studentsWithIssue = [];
+
+  students.forEach((s) => {
+    const built = buildPt06StudentReportData(classId, s.studentId, preloaded);
+    if (built.error) {
+      studentsWithIssue.push(s.fullName + " (" + built.error + ")");
+      return;
+    }
+    const printed = buildPt06PrintRows(built.subjectRows);
+    perStudent.push({ built: built, printed: printed });
+  });
+
+  if (studentsWithIssue.length > 0) {
+    return {
+      status: "error",
+      message: "ไม่สามารถออกรายงานรวมทั้งห้องได้ เนื่องจากมีนักเรียนที่เข้าถึงข้อมูลไม่ได้: " + studentsWithIssue.join("; "),
+    };
+  }
+
+  const cls = perStudent[0].built.cls;
+  const academicYear = perStudent[0].built.academicYear;
+  const fileName =
+    "ปถ06_รวมห้อง_ป." +
+    String(cls.GradeLevel).replace(/[^0-9]/g, "") +
+    "-" +
+    cls.RoomNumber +
+    "_" +
+    academicYear.Year;
+
+  const reportsFolder = DriveApp.getFolderById(getPt06ReportsFolderId());
+  const templateFile = DriveApp.getFileById(PT06_TEMPLATE_FILE_ID);
+  const copyFile = templateFile.makeCopy(fileName, reportsFolder);
+
+  try {
+    const reportSs = SpreadsheetApp.openById(copyFile.getId());
+    const templateSheet = reportSs.getSheets()[0];
+    const templateSheetName = templateSheet.getName();
+
+    // ขั้นที่ 1: คัดลอกชีตเปล่าให้ครบทุกคนก่อน (ยังไม่กรอกข้อมูล) เพื่อไม่ให้สำเนาคนหลังติดข้อมูลของคนก่อนหน้า
+    const sheets = perStudent.map((entry, idx) =>
+      idx === 0 ? templateSheet : templateSheet.copyTo(reportSs).setName(templateSheetName + "_" + (idx + 1))
+    );
+
+    // ขั้นที่ 2: ค่อยกรอกข้อมูลแต่ละคนลงชีตของตัวเอง
+    sheets.forEach((sheet, idx) => {
+      const entry = perStudent[idx];
+      fillPt06Sheet(sheet, entry.built.student, entry.built.enrollment, entry.built.cls, entry.built.academicYear, entry.printed);
+    });
+
+    SpreadsheetApp.flush();
+
+    const exportUrl =
+      "https://docs.google.com/spreadsheets/d/" +
+      copyFile.getId() +
+      "/export?format=pdf&size=A4&portrait=true&scale=4&top_margin=0.25&bottom_margin=0.25&left_margin=0.25&right_margin=0.25&horizontal_alignment=CENTER&vertical_alignment=TOP&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false";
+    const pdfResponse = UrlFetchApp.fetch(exportUrl, {
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    });
+
+    if (pdfResponse.getResponseCode() !== 200) {
+      return { status: "error", message: "ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง" };
+    }
+
+    const pdfBlob = pdfResponse.getBlob().setName(fileName + ".pdf");
+    const pdfFile = reportsFolder.createFile(pdfBlob);
+    const base64 = Utilities.base64Encode(pdfBlob.getBytes());
+
+    return {
+      status: "success",
+      data: { fileName: fileName + ".pdf", driveUrl: pdfFile.getUrl(), base64: base64, studentCount: perStudent.length },
+    };
+  } finally {
+    copyFile.setTrashed(true);
+  }
+}
+
+/**
+ * ===== บันทึกผลกิจกรรมพัฒนาผู้เรียน (นายทะเบียน/ผู้ช่วยนายทะเบียน) =====
+ * กิจกรรมพัฒนาผู้เรียนไม่มีครูประจำวิชาโดยตรง (ตกลงกับผู้ใช้แล้วว่าไม่ต้องมีการมอบหมายผ่าน TeachingAssignments)
+ * นายทะเบียน/ผู้ช่วยนายทะเบียนเป็นผู้บันทึกผล ผ/มผ แทน โดยตั้งค่าเริ่มต้นเป็น "ผ่านทุกคน" แล้วติ๊กออกเฉพาะคนที่ไม่ผ่าน
+ * ประเมินเป็นรายปี (ไม่มีภาคเรียน) และบันทึกได้พร้อมกันทุกห้อง+ทุกกิจกรรมของระดับชั้นเดียวกันในหน้าจอเดียว (26 ก.ย. 2569)
+ * เก็บผลไว้ในชีต "ActivityResults" (คอลัมน์: ActivityResultID, AcademicYearID, ClassID, SubjectID, StudentID, Result, RecordedBy, RecordedAt)
+ * — ต้องสร้างชีตนี้ไว้ในสเปรดชีตฐานข้อมูลก่อนใช้งานฟีเจอร์นี้
+ */
+const GRADE_LEVEL_ORDER_ACTIVITY = ["อนุบาล 1", "อนุบาล 2", "อนุบาล 3", "ป.1", "ป.2", "ป.3", "ป.4", "ป.5", "ป.6"];
+
+/**
+ * ข้อมูลเริ่มต้นของหน้า "บันทึกผลกิจกรรมพัฒนาผู้เรียน": ปีการศึกษาทั้งหมด + ระดับชั้นที่มีกิจกรรมพัฒนาผู้เรียนอยู่ในระบบ
+ */
+function handleGetActivityResultsPageData() {
+  const academicYears = handleGetAcademicYears().data;
+  const subjects = handleGetSubjects().data;
+
+  const gradeLevels = Array.from(
+    new Set(subjects.filter((s) => s.SubjectType === "กิจกรรมพัฒนาผู้เรียน").map((s) => s.GradeLevel))
+  ).sort((a, b) => GRADE_LEVEL_ORDER_ACTIVITY.indexOf(a) - GRADE_LEVEL_ORDER_ACTIVITY.indexOf(b));
+
+  return { status: "success", data: { academicYears: academicYears, gradeLevels: gradeLevels } };
+}
+
+/**
+ * ตารางบันทึกผล (matrix) ของระดับชั้นหนึ่ง ในปีการศึกษาหนึ่ง: แถว = นักเรียนทุกคนทุกห้องของระดับชั้นนั้น, คอลัมน์ = กิจกรรมทุกกิจกรรมของระดับชั้นนั้น
+ * ค่าเริ่มต้นของแต่ละช่อง = "ผ" (ผ่าน) เสมอถ้ายังไม่เคยบันทึกไว้ ตามที่ตกลงกับผู้ใช้ (นายทะเบียนจะติ๊กออกเฉพาะคนที่ไม่ผ่าน)
+ */
+function handleGetActivityResultMatrix(body) {
+  const academicYearId = body.academicYearId;
+  const gradeLevel = body.gradeLevel;
+
+  if (!academicYearId || !gradeLevel) {
+    return { status: "error", message: "กรุณาเลือกปีการศึกษาและระดับชั้น" };
+  }
+
+  const activities = getSheetData("Subjects")
+    .filter((s) => s.SubjectType === "กิจกรรมพัฒนาผู้เรียน" && String(s.GradeLevel) === String(gradeLevel))
+    .map((s) => ({ subjectId: s.SubjectID, subjectName: s.SubjectName }));
+
+  if (activities.length === 0) {
+    return { status: "error", message: "ไม่พบกิจกรรมพัฒนาผู้เรียนของระดับชั้นนี้ในระบบ" };
+  }
+
+  const classes = getCachedSheetData("Classes", 60)
+    .filter((c) => String(c.AcademicYearID) === String(academicYearId) && String(c.GradeLevel) === String(gradeLevel))
+    .sort((a, b) => String(a.RoomNumber).localeCompare(String(b.RoomNumber), "th", { numeric: true }));
+
+  if (classes.length === 0) {
+    return { status: "error", message: "ไม่พบห้องเรียนของระดับชั้นนี้ในปีการศึกษาที่เลือก" };
+  }
+
+  const classIds = classes.map((c) => String(c.ClassID));
+  const allStudents = getCachedSheetData("Students", 120);
+  const enrollments = getCachedSheetData("StudentEnrollments", 60).filter(
+    (e) => classIds.indexOf(String(e.ClassID)) !== -1
+  );
+  const existingResults = getSheetData("ActivityResults").filter(
+    (r) => String(r.AcademicYearID) === String(academicYearId) && classIds.indexOf(String(r.ClassID)) !== -1
+  );
+
+  const students = enrollments
+    .map((e) => {
+      const st = allStudents.find((s) => String(s.StudentID) === String(e.StudentID));
+      const cls = classes.find((c) => String(c.ClassID) === String(e.ClassID));
+      if (!st || !cls) return null;
+
+      const results = {};
+      activities.forEach((act) => {
+        const found = existingResults.find(
+          (r) =>
+            String(r.ClassID) === String(e.ClassID) &&
+            String(r.StudentID) === String(e.StudentID) &&
+            String(r.SubjectID) === String(act.subjectId)
+        );
+        results[act.subjectId] = found ? found.Result : "ผ";
+      });
+
+      return {
+        studentId: st.StudentID,
+        studentNumber: e.StudentNumber,
+        fullName: (st.PrefixName || "") + (st.FirstName || "") + " " + (st.LastName || ""),
+        classId: cls.ClassID,
+        className: cls.GradeLevel + "/" + cls.RoomNumber,
+        results: results,
+      };
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        a.className.localeCompare(b.className, "th", { numeric: true }) ||
+        Number(a.studentNumber) - Number(b.studentNumber)
+    );
+
+  return { status: "success", data: { activities: activities, students: students } };
+}
+
+/**
+ * บันทึกผลกิจกรรมพัฒนาผู้เรียนพร้อมกันทั้งตาราง (ทุกห้อง + ทุกกิจกรรมของระดับชั้นที่เลือกในคราวเดียว)
+ * results = [{ studentId, classId, subjectId, result }] เขียนทับ (upsert) ทุกรายการที่ส่งมา
+ */
+function handleSaveActivityResultsBulk(body) {
+  const academicYearId = body.academicYearId;
+  const results = body.results;
+
+  if (!academicYearId || !Array.isArray(results) || results.length === 0) {
+    return { status: "error", message: "ไม่พบข้อมูลที่จะบันทึก" };
+  }
+
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(30000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
+  }
+
+  try {
+    const sheet = SS.getSheetByName("ActivityResults");
+    if (!sheet) {
+      return { status: "error", message: "ไม่พบชีต ActivityResults กรุณาติดต่อผู้ดูแลระบบให้สร้างชีตนี้ก่อนใช้งาน" };
+    }
+
+    const range = sheet.getDataRange();
+    const data = range.getValues();
+    const headers = data[0];
+    const colIndex = {};
+    headers.forEach((h, i) => (colIndex[h] = i));
+
+    const now = new Date();
+    const userEmail = Session.getActiveUser().getEmail() || "";
+
+    // ทำ index แถวเดิมด้วย key = ClassID|SubjectID|StudentID ไว้ก่อน เพื่อหาแถวที่ต้องอัปเดตได้เร็วโดยไม่ต้องวนซ้ำทุกแถวทุกรายการ
+    const rowIndexByKey = {};
+    for (let r = 1; r < data.length; r++) {
+      const key = data[r][colIndex.ClassID] + "|" + data[r][colIndex.SubjectID] + "|" + data[r][colIndex.StudentID];
+      rowIndexByKey[key] = r;
+    }
+
+    let maxNum = 0;
+    for (let r = 1; r < data.length; r++) {
+      const idNum = parseInt(String(data[r][colIndex.ActivityResultID]).replace(/[^0-9]/g, ""), 10);
+      if (!isNaN(idNum) && idNum > maxNum) maxNum = idNum;
+    }
+
+    const rowsToAppend = [];
+
+    results.forEach((item) => {
+      const key = item.classId + "|" + item.subjectId + "|" + item.studentId;
+      const resultValue = item.result === "มผ" ? "มผ" : "ผ";
+
+      if (rowIndexByKey.hasOwnProperty(key)) {
+        const r = rowIndexByKey[key];
+        data[r][colIndex.Result] = resultValue;
+        data[r][colIndex.RecordedBy] = userEmail;
+        data[r][colIndex.RecordedAt] = now;
+      } else {
+        maxNum += 1;
+        const newRow = new Array(headers.length).fill("");
+        newRow[colIndex.ActivityResultID] = "AR" + String(maxNum).padStart(6, "0");
+        newRow[colIndex.AcademicYearID] = academicYearId;
+        newRow[colIndex.ClassID] = item.classId;
+        newRow[colIndex.SubjectID] = item.subjectId;
+        newRow[colIndex.StudentID] = item.studentId;
+        newRow[colIndex.Result] = resultValue;
+        newRow[colIndex.RecordedBy] = userEmail;
+        newRow[colIndex.RecordedAt] = now;
+        rowsToAppend.push(newRow);
+      }
+    });
+
+    range.setValues(data);
+    if (rowsToAppend.length > 0) {
+      const lastRow = sheet.getLastRow();
+      sheet.getRange(lastRow + 1, 1, rowsToAppend.length, headers.length).setValues(rowsToAppend);
+    }
+
+    invalidateSheetCache("ActivityResults");
+
+    return { status: "success", message: "บันทึกผลกิจกรรมพัฒนาผู้เรียนสำเร็จ " + results.length + " รายการ" };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * อ่านผลการเรียนทั้งปี (FinalResults) ของ "ทั้งโรงเรียน" ในปีการศึกษาที่ระบุ ครั้งเดียว (ไม่จำกัด ClassID เหมือน getFinalResultsByClass)
+ * ใช้สำหรับหน้า "รายงานสรุปผู้บริหาร" ที่ต้องคำนวณสถิติภาพรวมทั้งโรงเรียน — ตำแหน่งคอลัมน์อ้างอิงตามชีตเดียวกับ getFinalResultsByClass ทุกประการ
+ */
+function getFinalResultsBySchoolYear(academicYearId) {
+  const sheet = SS.getSheetByName("FinalResults");
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+
+  return data
+    .slice(1)
+    .filter((r) => String(r[4]) === String(academicYearId))
+    .map((r) => ({
+      studentId: r[1],
+      subjectId: r[2],
+      classId: r[3],
+      gradePoint: Number(r[12]),
+    }));
+}
+
+/**
+ * หน้า "รายงานสรุปผู้บริหาร" (Executive Report Dashboard) สำหรับผู้อำนวยการสถานศึกษา — 27 ก.ย. 2569
+ * อ่านอย่างเดียว (Read-only) ยังไม่มีปุ่มอนุมัติผลการเรียนระดับสถานศึกษาในหน้านี้ (ตกลงกับผู้ใช้ไว้ว่าจะทำในอนาคต)
+ * แสดงเฉพาะปีการศึกษาปัจจุบันของระบบเท่านั้น (ยังไม่รองรับเลือกเปรียบเทียบย้อนหลังหลายปี)
+ * body.gradeLevel (ไม่บังคับ) : ถ้าระบุ จะกรองเฉพาะ "ตาราง/กราฟสรุปผลสัมฤทธิ์แยกตามกลุ่มสาระ" ให้เหลือเฉพาะระดับชั้นนั้น
+ *                                ถ้าไม่ระบุ (ค่าว่าง) = ภาพรวมทั้งโรงเรียนทุกระดับชั้นรวมกัน
+ * กิจกรรมพัฒนาผู้เรียน (ประเมินแบบ ผ/มผ) ถูกตัดออกจากทุกการคำนวณในหน้านี้เสมอ (ไม่มีความหมายเป็นเกรด 0-4) เหมือนจุดอื่นๆ ในระบบ
+ */
+function handleGetDirectorReportData(body) {
+  const gradeLevelFilter = body.gradeLevel || "";
+
+  const academicYears = getSheetData("AcademicYears");
+  const currentYear =
+    academicYears.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE") ||
+    academicYears.slice().sort((a, b) => String(b.Year).localeCompare(String(a.Year)))[0];
+  if (!currentYear) {
+    return { status: "error", message: "ยังไม่ได้ตั้งค่าปีการศึกษาในระบบ" };
+  }
+  const currentYearId = currentYear.AcademicYearID;
+
+  const classes = getCachedSheetData("Classes", 60).filter((c) => String(c.AcademicYearID) === String(currentYearId));
+  if (classes.length === 0) {
+    return { status: "error", message: "ยังไม่มีข้อมูลห้องเรียนของปีการศึกษาปัจจุบัน กรุณาติดต่อนายทะเบียน" };
+  }
+  const classGradeLevelMap = {};
+  classes.forEach((c) => (classGradeLevelMap[String(c.ClassID)] = c.GradeLevel));
+  const classIdsCurrentYear = classes.map((c) => String(c.ClassID));
+
+  const gradeLevelOptions = Array.from(new Set(classes.map((c) => c.GradeLevel))).sort(
+    (a, b) => GRADE_LEVEL_ORDER_ACTIVITY.indexOf(a) - GRADE_LEVEL_ORDER_ACTIVITY.indexOf(b)
+  );
+
+  const totalStudents = getCachedSheetData("StudentEnrollments", 60).filter(
+    (e) => classIdsCurrentYear.indexOf(String(e.ClassID)) !== -1
+  ).length;
+
+  const subjects = handleGetSubjects().data;
+  const subjectGroupById = {};
+  const evalTypeById = {};
+  const nonActivitySubjectIds = new Set();
+  subjects.forEach((s) => {
+    subjectGroupById[String(s.SubjectID)] = s.SubjectGroup || "ไม่ระบุกลุ่มสาระ";
+    evalTypeById[String(s.SubjectID)] = s.EvaluationType;
+    if (s.SubjectType !== "กิจกรรมพัฒนาผู้เรียน") nonActivitySubjectIds.add(String(s.SubjectID));
+  });
+
+  // ผลการเรียนทั้งปีของทุกวิชา/ทุกห้องในปีการศึกษาปัจจุบัน อ่านครั้งเดียว (ไม่วนอ่านซ้ำต่อห้อง/ต่อวิชา)
+  const finalResults = getFinalResultsBySchoolYear(currentYearId).filter(
+    (r) => classIdsCurrentYear.indexOf(String(r.classId)) !== -1
+  );
+  const gradedResults = finalResults.filter((r) => evalTypeById[String(r.subjectId)] !== "ผ่าน-ไม่ผ่าน (ผ/มผ)");
+
+  // ----- การ์ดสรุป -----
+  const schoolGpax =
+    gradedResults.length > 0
+      ? Math.round((gradedResults.reduce((sum, r) => sum + r.gradePoint, 0) / gradedResults.length) * 100) / 100
+      : null;
+
+  // ----- ความคืบหน้าการส่งผลการเรียน: นับจากคู่ "รายวิชา x ห้องเรียน" ที่ถูกมอบหมายให้สอนจริงในปีนี้ (ไม่รวมกิจกรรมพัฒนาผู้เรียน) -----
+  const assignments = getCachedSheetData("TeachingAssignments", 120).filter(
+    (a) => String(a.AcademicYearID) === String(currentYearId) && classIdsCurrentYear.indexOf(String(a.ClassID)) !== -1
+  );
+  const subjectClassPairs = Array.from(
+    new Set(
+      assignments.filter((a) => nonActivitySubjectIds.has(String(a.SubjectID))).map((a) => a.SubjectID + "|" + a.ClassID)
+    )
+  );
+  const submissionKeySet = new Set(
+    getCachedSheetData("SemesterSubmissions", 60).map((r) => r.SubjectID + "|" + r.ClassID + "|" + r.Semester)
+  );
+  let sem1Submitted = 0;
+  let sem2Submitted = 0;
+  subjectClassPairs.forEach((pair) => {
+    if (submissionKeySet.has(pair + "|1")) sem1Submitted++;
+    if (submissionKeySet.has(pair + "|2")) sem2Submitted++;
+  });
+  const totalPairs = subjectClassPairs.length;
+  const sem1SubmittedPercent = totalPairs > 0 ? Math.round((sem1Submitted / totalPairs) * 10000) / 100 : 0;
+  const sem2SubmittedPercent = totalPairs > 0 ? Math.round((sem2Submitted / totalPairs) * 10000) / 100 : 0;
+
+  // ----- GPAX เฉลี่ยแยกตามระดับชั้น (ใช้ภาพรวมทั้งโรงเรียนเสมอ ไม่ขึ้นกับ body.gradeLevel) -----
+  const gpaxByGradeLevel = gradeLevelOptions.map((gl) => {
+    const rowsOfLevel = gradedResults.filter((r) => String(classGradeLevelMap[String(r.classId)]) === String(gl));
+    const avgGpax =
+      rowsOfLevel.length > 0
+        ? Math.round((rowsOfLevel.reduce((sum, r) => sum + r.gradePoint, 0) / rowsOfLevel.length) * 100) / 100
+        : null;
+    return { gradeLevel: gl, avgGpax: avgGpax, resultCount: rowsOfLevel.length };
+  });
+
+  // ----- สรุปผลสัมฤทธิ์แยกตามกลุ่มสาระการเรียนรู้ (กรองตามระดับชั้นถ้ามี body.gradeLevel ระบุมา) -----
+  const scopedResults = gradeLevelFilter
+    ? gradedResults.filter((r) => String(classGradeLevelMap[String(r.classId)]) === String(gradeLevelFilter))
+    : gradedResults;
+
+  // ระดับผลการเรียน 8 ระดับตามตารางหน้าปกรายงาน ปถ.05 (เรียงมากไปน้อยเหมือนกันเพื่อความคุ้นเคย)
+  const gradeBuckets = [4, 3.5, 3, 2.5, 2, 1.5, 1, 0];
+  const groupNames = Array.from(new Set(scopedResults.map((r) => subjectGroupById[String(r.subjectId)]))).sort();
+
+  const buildDistributionRow = (rows) => {
+    const total = rows.length;
+    const counts = gradeBuckets.map((lv) => rows.filter((r) => Number(r.gradePoint) === lv).length);
+    const percents = counts.map((c) => (total > 0 ? Math.round((c / total) * 10000) / 100 : "-"));
+    const avgGradePoint = total > 0 ? Math.round((rows.reduce((s, r) => s + r.gradePoint, 0) / total) * 100) / 100 : null;
+    const passCount = rows.filter((r) => Number(r.gradePoint) >= 3).length; // เกณฑ์เดียวกับ "ร้อยละผ่านเกณฑ์ดี" ในรายงาน ปถ.05
+    const failCount = rows.filter((r) => Number(r.gradePoint) === 0).length;
+    const passPercent = total > 0 ? Math.round((passCount / total) * 10000) / 100 : "-";
+    const failPercent = total > 0 ? Math.round((failCount / total) * 10000) / 100 : "-";
+    return { total: total, counts: counts, percents: percents, avgGradePoint: avgGradePoint, passPercent: passPercent, failPercent: failPercent };
+  };
+
+  const achievementRows = groupNames.map((groupName) =>
+    Object.assign({ subjectGroup: groupName }, buildDistributionRow(scopedResults.filter((r) => subjectGroupById[String(r.subjectId)] === groupName)))
+  );
+  const achievementTotalRow = buildDistributionRow(scopedResults);
+
+  return {
+    status: "success",
+    data: {
+      academicYearLabel: currentYear.Year,
+      gradeLevelOptions: gradeLevelOptions,
+      cards: {
+        totalStudents: totalStudents,
+        schoolGpax: schoolGpax,
+        sem1SubmittedPercent: sem1SubmittedPercent,
+        sem2SubmittedPercent: sem2SubmittedPercent,
+      },
+      gpaxByGradeLevel: gpaxByGradeLevel,
+      submissionProgress: {
+        sem1: { submitted: sem1Submitted, total: totalPairs, percent: sem1SubmittedPercent },
+        sem2: { submitted: sem2Submitted, total: totalPairs, percent: sem2SubmittedPercent },
+      },
+      achievementBySubjectGroup: achievementRows.map((r) => ({
+        subjectGroup: r.subjectGroup,
+        avgGradePoint: r.avgGradePoint,
+        passPercent: r.passPercent,
+        total: r.total,
+      })),
+      achievementTable: {
+        gradeLevels: gradeBuckets,
+        rows: achievementRows,
+        totalRow: achievementTotalRow,
+      },
+    },
+  };
+}
+
+/**
+ * หน้าแรกของนายทะเบียน/ผู้ช่วยนายทะเบียน (dashboard.html) — กำกับติดตามความคืบหน้าการบันทึกคะแนนของครูประจำวิชาทุกคน (อ่านอย่างเดียว) — 5 ต.ค. 2569
+ * เกณฑ์ "ครบ" ของนักเรียน 1 คน ในวิชา/ห้อง/ภาคเรียนหนึ่ง = มีคะแนนครบทุกช่องเก็บคะแนน (ทุกหน่วย + ปลายภาค) ตามที่ตั้งค่าไว้ใน GradeComponents/GradeSubComponents
+ * ดูเฉพาะ "ภาคเรียนปัจจุบันที่เปิดให้บันทึกอยู่" เท่านั้น (ดู getCurrentOpenSemester) ไม่รวมกิจกรรมพัฒนาผู้เรียน (ไม่มีช่องเก็บคะแนนแบบนี้)
+ * body.gradeLevel (ไม่บังคับ) : กรองเฉพาะห้องเรียนของระดับชั้นนั้น ถ้าไม่ระบุ = ทุกระดับชั้น
+ */
+function handleGetRegistrarTeacherProgressOverview(body) {
+  const gradeLevelFilter = body.gradeLevel || "";
+
+  const academicYears = getSheetData("AcademicYears");
+  const currentYear =
+    academicYears.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE") ||
+    academicYears.slice().sort((a, b) => String(b.Year).localeCompare(String(a.Year)))[0];
+  if (!currentYear) {
+    return { status: "error", message: "ยังไม่ได้ตั้งค่าปีการศึกษาในระบบ" };
+  }
+  const currentYearId = currentYear.AcademicYearID;
+
+  const currentSemester = getCurrentOpenSemester(currentYearId);
+  if (!currentSemester) {
+    return {
+      status: "success",
+      data: { noOpenSemester: true, academicYearLabel: currentYear.Year, gradeLevelOptions: [], cards: null, rows: [] },
+    };
+  }
+
+  let classes = getCachedSheetData("Classes", 60).filter((c) => String(c.AcademicYearID) === String(currentYearId));
+  const gradeLevelOptions = Array.from(new Set(classes.map((c) => c.GradeLevel))).sort(
+    (a, b) => GRADE_LEVEL_ORDER_ACTIVITY.indexOf(a) - GRADE_LEVEL_ORDER_ACTIVITY.indexOf(b)
+  );
+  if (gradeLevelFilter) classes = classes.filter((c) => String(c.GradeLevel) === String(gradeLevelFilter));
+
+  if (classes.length === 0) {
+    return {
+      status: "success",
+      data: {
+        noOpenSemester: false,
+        academicYearLabel: currentYear.Year,
+        currentSemester: currentSemester,
+        gradeLevelOptions: gradeLevelOptions,
+        cards: { totalCombos: 0, completeCombos: 0, inProgressCombos: 0, notStartedCombos: 0, overallPercent: 0 },
+        rows: [],
+      },
+    };
+  }
+
+  const classIds = classes.map((c) => String(c.ClassID));
+  const classById = {};
+  classes.forEach((c) => (classById[String(c.ClassID)] = c));
+
+  const subjects = handleGetSubjects().data;
+  const subjectById = {};
+  subjects.forEach((s) => (subjectById[String(s.SubjectID)] = s));
+
+  const usersForTeacherName = getCachedSheetData("Users", 300);
+
+  // คู่ "รายวิชา x ห้องเรียน" ทั้งหมดที่ถูกมอบหมายให้สอนจริงในขอบเขตที่เลือก (ไม่รวมกิจกรรมพัฒนาผู้เรียน ซึ่งไม่มีช่องเก็บคะแนนแบบนี้)
+  const assignments = getCachedSheetData("TeachingAssignments", 120).filter(
+    (a) =>
+      String(a.AcademicYearID) === String(currentYearId) &&
+      classIds.indexOf(String(a.ClassID)) !== -1 &&
+      subjectById[String(a.SubjectID)] &&
+      subjectById[String(a.SubjectID)].SubjectType !== "กิจกรรมพัฒนาผู้เรียน"
+  );
+  const comboKeys = Array.from(new Set(assignments.map((a) => a.SubjectID + "|" + a.ClassID)));
+
+  // โครงสร้างช่องเก็บคะแนนของภาคเรียนปัจจุบัน อ่านครั้งเดียว ไม่วนอ่านซ้ำต่อคู่วิชา/ห้อง
+  const componentsBySubject = {};
+  getCachedSheetData("GradeComponents", 120)
+    .filter((c) => String(c.AcademicYearID) === String(currentYearId) && Number(c.Semester) === currentSemester)
+    .forEach((c) => {
+      const key = String(c.SubjectID);
+      if (!componentsBySubject[key]) componentsBySubject[key] = [];
+      componentsBySubject[key].push(c);
+    });
+
+  const subComponentCountByComponentId = {};
+  getCachedSheetData("GradeSubComponents", 60).forEach((sc) => {
+    const key = String(sc.ComponentID);
+    subComponentCountByComponentId[key] = (subComponentCountByComponentId[key] || 0) + 1;
+  });
+
+  // คะแนนของภาคเรียนปัจจุบันเฉพาะห้องในขอบเขตที่เลือก อ่านครั้งเดียว แล้วจัดกลุ่มตามคู่วิชา/ห้อง
+  const scoresByComboKey = {};
+  getSheetData("StudentScores")
+    .filter(
+      (sc) =>
+        String(sc.AcademicYearID) === String(currentYearId) &&
+        Number(sc.Semester) === currentSemester &&
+        classIds.indexOf(String(sc.ClassID)) !== -1
+    )
+    .forEach((sc) => {
+      const key = sc.SubjectID + "|" + sc.ClassID;
+      if (!scoresByComboKey[key]) scoresByComboKey[key] = [];
+      scoresByComboKey[key].push(sc);
+    });
+
+  const enrollmentsByClassId = {};
+  getCachedSheetData("StudentEnrollments", 60)
+    .filter((e) => classIds.indexOf(String(e.ClassID)) !== -1)
+    .forEach((e) => {
+      const key = String(e.ClassID);
+      if (!enrollmentsByClassId[key]) enrollmentsByClassId[key] = [];
+      enrollmentsByClassId[key].push(String(e.StudentID));
+    });
+
+  const STATUS_PRIORITY = { not_started: 0, in_progress: 1, complete: 2 };
+
+  const rows = comboKeys
+    .map((key) => {
+      const parts = key.split("|");
+      const subjectId = parts[0];
+      const classId = parts[1];
+      const subject = subjectById[subjectId];
+      const cls = classById[classId];
+      if (!subject || !cls) return null;
+
+      const studentIds = enrollmentsByClassId[classId] || [];
+      const totalStudents = studentIds.length;
+      if (totalStudents === 0) return null; // ห้องนี้ยังไม่มีนักเรียนลงทะเบียน ไม่มีอะไรให้ติดตาม
+
+      const components = componentsBySubject[subjectId] || [];
+      const expectedPerStudent = components.reduce((sum, c) => {
+        if (c.ComponentType === "ปลายภาค") return sum + 1;
+        return sum + (subComponentCountByComponentId[String(c.ComponentID)] || 0);
+      }, 0);
+
+      const teacherNames = Array.from(
+        new Set(assignments.filter((a) => String(a.SubjectID) === subjectId && String(a.ClassID) === classId).map((a) => String(a.TeacherUserID)))
+      )
+        .map((uid) => {
+          const u = usersForTeacherName.find((usr) => String(usr.UserID) === uid);
+          return u ? u.FullName : "";
+        })
+        .filter(Boolean)
+        .join(", ");
+
+      let completeCount = 0;
+      let totalRecordedCells = 0;
+
+      if (components.length > 0 && expectedPerStudent > 0) {
+        const comboScores = scoresByComboKey[subjectId + "|" + classId] || [];
+        const recordedSetByStudent = {};
+        comboScores.forEach((sc) => {
+          const sid = String(sc.StudentID);
+          if (!recordedSetByStudent[sid]) recordedSetByStudent[sid] = new Set();
+          recordedSetByStudent[sid].add(sc.ComponentID + "|" + (sc.SubComponentID || ""));
+        });
+        studentIds.forEach((sid) => {
+          const recordedCount = recordedSetByStudent[sid] ? recordedSetByStudent[sid].size : 0;
+          totalRecordedCells += recordedCount;
+          if (recordedCount >= expectedPerStudent) completeCount++;
+        });
+      }
+
+      const percent = totalStudents > 0 ? Math.round((completeCount / totalStudents) * 100) : 0;
+      const status =
+        components.length === 0 || expectedPerStudent === 0 || totalRecordedCells === 0
+          ? "not_started"
+          : percent === 100
+          ? "complete"
+          : "in_progress";
+
+      return {
+        subjectId: subjectId,
+        subjectName: subject.SubjectName,
+        subjectGroup: subject.SubjectGroup || "",
+        classId: classId,
+        className: cls.GradeLevel + "/" + cls.RoomNumber,
+        gradeLevel: cls.GradeLevel,
+        teacherNames: teacherNames || "ไม่พบข้อมูลครูผู้สอน",
+        totalStudents: totalStudents,
+        completeCount: completeCount,
+        percent: percent,
+        status: status,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => STATUS_PRIORITY[a.status] - STATUS_PRIORITY[b.status] || a.percent - b.percent || a.className.localeCompare(b.className, "th", { numeric: true }));
+
+  const totalCombos = rows.length;
+  const completeCombos = rows.filter((r) => r.status === "complete").length;
+  const notStartedCombos = rows.filter((r) => r.status === "not_started").length;
+  const inProgressCombos = totalCombos - completeCombos - notStartedCombos;
+  const totalStudentsAll = rows.reduce((sum, r) => sum + r.totalStudents, 0);
+  const totalCompleteAll = rows.reduce((sum, r) => sum + r.completeCount, 0);
+  const overallPercent = totalStudentsAll > 0 ? Math.round((totalCompleteAll / totalStudentsAll) * 100) : 0;
+
+  return {
+    status: "success",
+    data: {
+      noOpenSemester: false,
+      academicYearLabel: currentYear.Year,
+      currentSemester: currentSemester,
+      gradeLevelOptions: gradeLevelOptions,
+      cards: {
+        totalCombos: totalCombos,
+        completeCombos: completeCombos,
+        inProgressCombos: inProgressCombos,
+        notStartedCombos: notStartedCombos,
+        overallPercent: overallPercent,
+      },
+      rows: rows,
+    },
+  };
+}
+
+/**
+ * รายละเอียดเจาะลึกของ 1 คู่ "รายวิชา x ห้องเรียน" สำหรับ Modal "ดูรายละเอียด" ในหน้าแรกนายทะเบียน — 5 ต.ค. 2569
+ * คืนรายชื่อนักเรียนที่ยังกรอกคะแนนไม่ครบ พร้อมระบุว่าขาดช่องเก็บคะแนนใดบ้าง (ใช้ภาคเรียนปัจจุบันที่เปิดอยู่เสมอ เหมือนหน้าภาพรวม)
+ */
+function handleGetTeacherProgressDetail(body) {
+  const subjectId = body.subjectId;
+  const classId = body.classId;
+  if (!subjectId || !classId) {
+    return { status: "error", message: "ข้อมูลไม่ครบถ้วน" };
+  }
+
+  const academicYears = getSheetData("AcademicYears");
+  const currentYear =
+    academicYears.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE") ||
+    academicYears.slice().sort((a, b) => String(b.Year).localeCompare(String(a.Year)))[0];
+  if (!currentYear) {
+    return { status: "error", message: "ยังไม่ได้ตั้งค่าปีการศึกษาในระบบ" };
+  }
+  const currentYearId = currentYear.AcademicYearID;
+
+  const currentSemester = getCurrentOpenSemester(currentYearId);
+  if (!currentSemester) {
+    return { status: "error", message: "ขณะนี้ไม่มีภาคเรียนใดเปิดให้บันทึกคะแนนอยู่" };
+  }
+
+  const cls = getCachedSheetData("Classes", 60).find((c) => String(c.ClassID) === String(classId));
+  const subject = handleGetSubjects().data.find((s) => String(s.SubjectID) === String(subjectId));
+  if (!cls || !subject) {
+    return { status: "error", message: "ไม่พบข้อมูลวิชาหรือห้องเรียนนี้" };
+  }
+
+  const components = getCachedSheetData("GradeComponents", 120)
+    .filter(
+      (c) =>
+        String(c.SubjectID) === String(subjectId) &&
+        String(c.AcademicYearID) === String(currentYearId) &&
+        Number(c.Semester) === currentSemester
+    )
+    .sort((a, b) => {
+      if (a.ComponentType !== b.ComponentType) return a.ComponentType === "หน่วย" ? -1 : 1;
+      return Number(a.ComponentOrder || 0) - Number(b.ComponentOrder || 0);
+    });
+
+  if (components.length === 0) {
+    return {
+      status: "success",
+      data: { className: cls.GradeLevel + "/" + cls.RoomNumber, subjectLabel: subjectId + " " + subject.SubjectName, notSetUp: true, missingStudents: [] },
+    };
+  }
+
+  const subComponentsByComponentId = {};
+  getCachedSheetData("GradeSubComponents", 60).forEach((sc) => {
+    const key = String(sc.ComponentID);
+    if (!subComponentsByComponentId[key]) subComponentsByComponentId[key] = [];
+    subComponentsByComponentId[key].push(sc);
+  });
+
+  const enrollments = getCachedSheetData("StudentEnrollments", 60).filter((e) => String(e.ClassID) === String(classId));
+  const allStudents = getCachedSheetData("Students", 120);
+  const scores = getSheetData("StudentScores").filter(
+    (sc) =>
+      String(sc.ClassID) === String(classId) &&
+      String(sc.SubjectID) === String(subjectId) &&
+      String(sc.AcademicYearID) === String(currentYearId) &&
+      Number(sc.Semester) === currentSemester
+  );
+
+  const students = enrollments
+    .map((e) => {
+      const st = allStudents.find((s) => String(s.StudentID) === String(e.StudentID));
+      return {
+        studentId: e.StudentID,
+        studentNumber: Number(e.StudentNumber) || 0,
+        fullName: st ? (st.PrefixName || "") + (st.FirstName || "") + " " + (st.LastName || "") : e.StudentID,
+      };
+    })
+    .sort((a, b) => a.studentNumber - b.studentNumber);
+
+  const missingStudents = [];
+  let completeCount = 0;
+
+  students.forEach((st) => {
+    const scoresForStudent = scores.filter((sc) => String(sc.StudentID) === String(st.studentId));
+    const missingComponents = [];
+
+    components.forEach((c) => {
+      const isFinalExam = c.ComponentType === "ปลายภาค";
+      const expected = isFinalExam ? 1 : (subComponentsByComponentId[String(c.ComponentID)] || []).length;
+      const recorded = isFinalExam
+        ? scoresForStudent.filter((sc) => String(sc.ComponentID) === String(c.ComponentID)).length
+        : new Set(
+            scoresForStudent.filter((sc) => String(sc.ComponentID) === String(c.ComponentID)).map((sc) => sc.SubComponentID)
+          ).size;
+
+      if (recorded < expected) {
+        missingComponents.push({ componentName: c.ComponentName, recorded: recorded, expected: expected });
+      }
+    });
+
+    if (missingComponents.length > 0) {
+      missingStudents.push({
+        studentId: st.studentId,
+        studentNumber: st.studentNumber,
+        fullName: st.fullName,
+        missingComponents: missingComponents,
+      });
+    } else {
+      completeCount++;
+    }
+  });
+
+  return {
+    status: "success",
+    data: {
+      className: cls.GradeLevel + "/" + cls.RoomNumber,
+      subjectLabel: subjectId + " " + subject.SubjectName,
+      currentSemester: currentSemester,
+      totalStudents: students.length,
+      completeCount: completeCount,
+      notSetUp: false,
+      missingStudents: missingStudents,
+    },
+  };
+}
 
 /**
  * แปลงชื่อระดับชั้นให้เป็นรหัสย่อ สำหรับใช้สร้าง ClassID
@@ -1051,6 +3275,7 @@ function handleAddClass(body) {
   ]);
 
   CacheService.getScriptCache().remove("classesPageData");
+  invalidateSheetCache("Classes");
   return { status: "success", message: "เพิ่มห้องเรียนเรียบร้อยแล้ว" };
   }
 
@@ -1082,13 +3307,17 @@ function handleUpdateClass(body) {
   ]]);
 
   CacheService.getScriptCache().remove("classesPageData");
+  invalidateSheetCache("Classes");
   return { status: "success", message: "แก้ไขห้องเรียนเรียบร้อยแล้ว" };
   }
 
 /**
  * ลบห้องเรียน
  */
-function handleDeleteClass(classId) {
+function handleDeleteClass(body) {
+  const classId = typeof body === "object" ? body.classId : body;
+  const force = typeof body === "object" && !!body.force;
+
   if (!classId) {
     return { status: "error", message: "ไม่พบห้องเรียนที่ต้องการลบ" };
   }
@@ -1098,9 +3327,30 @@ function handleDeleteClass(classId) {
     return { status: "error", message: "ไม่พบห้องเรียนนี้ในระบบ" };
   }
 
+  if (!force) {
+    const enrollmentCount = getSheetData("StudentEnrollments").filter((e) => String(e.ClassID) === String(classId)).length;
+    const assignmentCount = getSheetData("TeachingAssignments").filter((a) => String(a.ClassID) === String(classId)).length;
+    const scoreCount = getSheetData("StudentScores").filter((s) => String(s.ClassID) === String(classId)).length;
+    const finalResultCount = getSheetData("FinalResults").filter((r) => String(r.ClassID) === String(classId)).length;
+
+    if (enrollmentCount > 0 || assignmentCount > 0 || scoreCount > 0 || finalResultCount > 0) {
+      const parts = [];
+      if (enrollmentCount > 0) parts.push(`นักเรียนที่ลงทะเบียน ${enrollmentCount} คน`);
+      if (assignmentCount > 0) parts.push(`การมอบหมายการสอน ${assignmentCount} รายการ`);
+      if (scoreCount > 0) parts.push(`คะแนนที่กรอกไว้แล้ว ${scoreCount} รายการ`);
+      if (finalResultCount > 0) parts.push(`ผลการเรียนที่ตัดสินแล้ว ${finalResultCount} รายการ`);
+
+      return {
+        status: "confirm_required",
+        message: `ห้องเรียนนี้มี${parts.join(", ")} ผูกอยู่ หากลบห้องนี้ ข้อมูลดังกล่าวจะไม่ถูกลบไปด้วย แต่จะกลายเป็นข้อมูลที่ไม่มีห้องเรียนอ้างอิงอยู่ ต้องการดำเนินการลบต่อหรือไม่`,
+      };
+    }
+  }
+
   SS.getSheetByName("Classes").deleteRow(rowIndex);
 
   CacheService.getScriptCache().remove("classesPageData");
+  invalidateSheetCache("Classes");
   return { status: "success", message: "ลบห้องเรียนเรียบร้อยแล้ว" };
   }
 
@@ -1116,14 +3366,14 @@ function handleGetClassesPageData() {
   const academicYears = getSheetData("AcademicYears");
   academicYears.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
 
-  const users = getSheetData("Users");
-  const userRoles = getSheetData("UserRoles");
+  const users = getCachedSheetData("Users", 300);
+  const userRoles = getCachedSheetData("UserRoles", 300);
   const homeroomUserIds = userRoles.filter((r) => r.RoleType === "HOMEROOM_TEACHER").map((r) => r.UserID);
   const homeroomTeachers = users
     .filter((u) => homeroomUserIds.indexOf(u.UserID) !== -1)
     .map((u) => ({ userId: u.UserID, fullName: u.FullName, position: u.Position }));
 
-  const classes = getSheetData("Classes");
+  const classes = getCachedSheetData("Classes", 60);
 
   const data = { academicYears, homeroomTeachers, classes };
   cache.put("classesPageData", JSON.stringify(data), 120); // แคชสั้นกว่ารายวิชา เพราะ StudentCount เปลี่ยนบ่อยกว่า
@@ -1154,7 +3404,7 @@ function handleGetEnrollmentsPageData() {
   const academicYears = getSheetData("AcademicYears");
   academicYears.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
 
-  const classes = getSheetData("Classes");
+  const classes = getCachedSheetData("Classes", 60);
 
   return { status: "success", data: { academicYears, classes } };
 }
@@ -1185,30 +3435,40 @@ function handleAddEnrollment(body) {
     return { status: "error", message: "กรุณาเลือกนักเรียนและระบุเลขที่ให้ครบถ้วน" };
   }
 
-  const sheet = SS.getSheetByName("StudentEnrollments");
-  const enrollments = getSheetData("StudentEnrollments");
-
-  const dupStudentYear = enrollments.some(
-    (e) => String(e.StudentID) === String(body.studentId) && String(e.AcademicYearID) === String(body.academicYearId)
-  );
-  if (dupStudentYear) {
-    return { status: "error", message: "นักเรียนคนนี้ถูกจัดเข้าห้องเรียนในปีการศึกษานี้แล้ว" };
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
   }
 
-  const dupNumber = enrollments.some(
-    (e) => String(e.ClassID) === String(body.classId) && String(e.StudentNumber) === String(body.studentNumber)
-  );
-  if (dupNumber) {
-    return { status: "error", message: "เลขที่นี้มีนักเรียนคนอื่นใช้อยู่แล้วในห้องนี้" };
+  try {
+    const sheet = SS.getSheetByName("StudentEnrollments");
+    const enrollments = getSheetData("StudentEnrollments");
+
+    const dupStudentYear = enrollments.some(
+      (e) => String(e.StudentID) === String(body.studentId) && String(e.AcademicYearID) === String(body.academicYearId)
+    );
+    if (dupStudentYear) {
+      return { status: "error", message: "นักเรียนคนนี้ถูกจัดเข้าห้องเรียนในปีการศึกษานี้แล้ว" };
+    }
+
+    const dupNumber = enrollments.some(
+      (e) => String(e.ClassID) === String(body.classId) && String(e.StudentNumber) === String(body.studentNumber)
+    );
+    if (dupNumber) {
+      return { status: "error", message: "เลขที่นี้มีนักเรียนคนอื่นใช้อยู่แล้วในห้องนี้" };
+    }
+
+    const enrollmentId = "ENR-" + new Date().getTime();
+    sheet.appendRow([enrollmentId, body.studentId, body.classId, body.academicYearId, body.studentNumber]);
+
+    adjustClassStudentCount(body.classId, 1);
+
+    invalidateSheetCache("StudentEnrollments");
+    return { status: "success", message: "เพิ่มนักเรียนเข้าห้องเรียนสำเร็จ" };
+  } finally {
+    lock.releaseLock();
   }
-
-  const enrollmentId = "ENR-" + new Date().getTime();
-  sheet.appendRow([enrollmentId, body.studentId, body.classId, body.academicYearId, body.studentNumber]);
-
-  adjustClassStudentCount(body.classId, 1);
-
-  invalidateSheetCache("StudentEnrollments");
-  return { status: "success", message: "เพิ่มนักเรียนเข้าห้องเรียนสำเร็จ" };
 }
 
 
@@ -1217,39 +3477,49 @@ function handleAddEnrollmentsBulk(body) {
     return { status: "error", message: "กรุณาเลือกนักเรียนอย่างน้อย 1 คน" };
   }
 
-  const sheet = SS.getSheetByName("StudentEnrollments");
-  const enrollments = getSheetData("StudentEnrollments");
-
-  // กันข้อมูลซ้ำ: ตัดคนที่ถูกจัดห้องในปีนี้ไปแล้วออก (เผื่อเปิดโมดัลค้างไว้)
-  const alreadyEnrolledIds = enrollments
-    .filter((e) => String(e.AcademicYearID) === String(body.academicYearId))
-    .map((e) => String(e.StudentID));
-
-  let selectedIds = body.studentIds.filter((id) => alreadyEnrolledIds.indexOf(String(id)) === -1);
-
-  if (selectedIds.length === 0) {
-    return { status: "error", message: "นักเรียนที่เลือกถูกจัดเข้าห้องเรียนในปีการศึกษานี้ไปแล้วทั้งหมด" };
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
   }
 
-  // เรียงลำดับตามเลขประจำตัวนักเรียนจากน้อยไปมาก
-  selectedIds.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+  try {
+    const sheet = SS.getSheetByName("StudentEnrollments");
+    const enrollments = getSheetData("StudentEnrollments");
 
-  // หาเลขที่เริ่มต้น = เลขที่มากสุดในห้องนี้ + 1
-  const currentNumbersInClass = enrollments
-    .filter((e) => String(e.ClassID) === String(body.classId))
-    .map((e) => Number(e.StudentNumber) || 0);
-  let nextNumber = currentNumbersInClass.length > 0 ? Math.max(...currentNumbersInClass) + 1 : 1;
+    // กันข้อมูลซ้ำ: ตัดคนที่ถูกจัดห้องในปีนี้ไปแล้วออก (เผื่อเปิดโมดัลค้างไว้)
+    const alreadyEnrolledIds = enrollments
+      .filter((e) => String(e.AcademicYearID) === String(body.academicYearId))
+      .map((e) => String(e.StudentID));
 
-  selectedIds.forEach((studentId) => {
-    const enrollmentId = "ENR-" + new Date().getTime() + "-" + studentId;
-    sheet.appendRow([enrollmentId, studentId, body.classId, body.academicYearId, nextNumber]);
-    nextNumber++;
-  });
+    let selectedIds = body.studentIds.filter((id) => alreadyEnrolledIds.indexOf(String(id)) === -1);
 
-  adjustClassStudentCount(body.classId, selectedIds.length);
+    if (selectedIds.length === 0) {
+      return { status: "error", message: "นักเรียนที่เลือกถูกจัดเข้าห้องเรียนในปีการศึกษานี้ไปแล้วทั้งหมด" };
+    }
 
-  invalidateSheetCache("StudentEnrollments");
-  return { status: "success", message: `เพิ่มนักเรียนเข้าห้องเรียนสำเร็จ ${selectedIds.length} คน` };
+    // เรียงลำดับตามเลขประจำตัวนักเรียนจากน้อยไปมาก
+    selectedIds.sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+
+    // หาเลขที่เริ่มต้น = เลขที่มากสุดในห้องนี้ + 1
+    const currentNumbersInClass = enrollments
+      .filter((e) => String(e.ClassID) === String(body.classId))
+      .map((e) => Number(e.StudentNumber) || 0);
+    let nextNumber = currentNumbersInClass.length > 0 ? Math.max(...currentNumbersInClass) + 1 : 1;
+
+    selectedIds.forEach((studentId) => {
+      const enrollmentId = "ENR-" + new Date().getTime() + "-" + studentId;
+      sheet.appendRow([enrollmentId, studentId, body.classId, body.academicYearId, nextNumber]);
+      nextNumber++;
+    });
+
+    adjustClassStudentCount(body.classId, selectedIds.length);
+
+    invalidateSheetCache("StudentEnrollments");
+    return { status: "success", message: `เพิ่มนักเรียนเข้าห้องเรียนสำเร็จ ${selectedIds.length} คน` };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleUpdateEnrollmentNumber(body) {
@@ -1257,51 +3527,77 @@ function handleUpdateEnrollmentNumber(body) {
     return { status: "error", message: "ข้อมูลไม่ครบถ้วน" };
   }
 
-  const enrollments = getSheetData("StudentEnrollments");
-  const target = enrollments.find((e) => String(e.EnrollmentID) === String(body.enrollmentId));
-  if (!target) {
-    return { status: "error", message: "ไม่พบข้อมูลการลงทะเบียนนี้" };
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
   }
 
-  const dupNumber = enrollments.some(
-    (e) =>
-      String(e.ClassID) === String(target.ClassID) &&
-      String(e.StudentNumber) === String(body.studentNumber) &&
-      String(e.EnrollmentID) !== String(body.enrollmentId)
-  );
-  if (dupNumber) {
-    return { status: "error", message: "เลขที่นี้มีนักเรียนคนอื่นใช้อยู่แล้วในห้องนี้" };
-  }
+  try {
+    const enrollments = getSheetData("StudentEnrollments");
+    const target = enrollments.find((e) => String(e.EnrollmentID) === String(body.enrollmentId));
+    if (!target) {
+      return { status: "error", message: "ไม่พบข้อมูลการลงทะเบียนนี้" };
+    }
 
-  const rowIndex = findRowIndexByColumnValue("StudentEnrollments", "EnrollmentID", body.enrollmentId);
-  if (rowIndex === -1) {
-    return { status: "error", message: "ไม่พบข้อมูลการลงทะเบียนนี้" };
-  }
+    const dupNumber = enrollments.some(
+      (e) =>
+        String(e.ClassID) === String(target.ClassID) &&
+        String(e.StudentNumber) === String(body.studentNumber) &&
+        String(e.EnrollmentID) !== String(body.enrollmentId)
+    );
+    if (dupNumber) {
+      return { status: "error", message: "เลขที่นี้มีนักเรียนคนอื่นใช้อยู่แล้วในห้องนี้" };
+    }
 
-  SS.getSheetByName("StudentEnrollments").getRange(rowIndex, 5).setValue(body.studentNumber);
-  invalidateSheetCache("StudentEnrollments");
-  return { status: "success", message: "แก้ไขเลขที่สำเร็จ" };
+    const rowIndex = findRowIndexByColumnValue("StudentEnrollments", "EnrollmentID", body.enrollmentId);
+    if (rowIndex === -1) {
+      return { status: "error", message: "ไม่พบข้อมูลการลงทะเบียนนี้" };
+    }
+
+    SS.getSheetByName("StudentEnrollments").getRange(rowIndex, 5).setValue(body.studentNumber);
+    invalidateSheetCache("StudentEnrollments");
+    return { status: "success", message: "แก้ไขเลขที่สำเร็จ" };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleDeleteEnrollment(enrollmentId) {
-  const enrollments = getSheetData("StudentEnrollments");
-  const target = enrollments.find((e) => String(e.EnrollmentID) === String(enrollmentId));
-  if (!target) {
-    return { status: "error", message: "ไม่พบข้อมูลการลงทะเบียนนี้" };
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
   }
 
-  const rowIndex = findRowIndexByColumnValue("StudentEnrollments", "EnrollmentID", enrollmentId);
-  if (rowIndex === -1) {
-    return { status: "error", message: "ไม่พบข้อมูลการลงทะเบียนนี้" };
+  try {
+    const enrollments = getSheetData("StudentEnrollments");
+    const target = enrollments.find((e) => String(e.EnrollmentID) === String(enrollmentId));
+    if (!target) {
+      return { status: "error", message: "ไม่พบข้อมูลการลงทะเบียนนี้" };
+    }
+
+    const rowIndex = findRowIndexByColumnValue("StudentEnrollments", "EnrollmentID", enrollmentId);
+    if (rowIndex === -1) {
+      return { status: "error", message: "ไม่พบข้อมูลการลงทะเบียนนี้" };
+    }
+
+    SS.getSheetByName("StudentEnrollments").deleteRow(rowIndex);
+    adjustClassStudentCount(target.ClassID, -1);
+
+    invalidateSheetCache("StudentEnrollments");
+    return { status: "success", message: "นำนักเรียนออกจากห้องเรียนสำเร็จ" };
+  } finally {
+    lock.releaseLock();
   }
-
-  SS.getSheetByName("StudentEnrollments").deleteRow(rowIndex);
-  adjustClassStudentCount(target.ClassID, -1);
-
-  invalidateSheetCache("StudentEnrollments");
-  return { status: "success", message: "นำนักเรียนออกจากห้องเรียนสำเร็จ" };
 }
 
+/**
+ * ปรับจำนวนนักเรียนในห้อง (StudentCount) ขึ้น/ลง
+ * ฟังก์ชันนี้ไม่มี LockService ของตัวเอง เพราะถูกเรียกใช้จากภายในฟังก์ชันที่ถือ Lock ไว้อยู่แล้วเสมอ
+ * (handleAddEnrollment, handleAddEnrollmentsBulk, handleDeleteEnrollment) ห้ามเรียกใช้นอกเหนือจาก
+ * ภายใต้ Lock เพราะจะเสี่ยงต่อการอ่าน/เขียนค่าทับกันเมื่อมีการลงทะเบียนพร้อมกันหลายคำขอ
+ */
 function adjustClassStudentCount(classId, delta) {
   const rowIndex = findRowIndexByColumnValue("Classes", "ClassID", classId);
   if (rowIndex === -1) return;
@@ -1311,6 +3607,7 @@ function adjustClassStudentCount(classId, delta) {
   const newCount = Math.max(0, currentCount + delta);
   sheet.getRange(rowIndex, 7).setValue(newCount);
   CacheService.getScriptCache().remove("classesPageData");
+  invalidateSheetCache("Classes");
 }
 
 
@@ -1318,11 +3615,11 @@ function handleGetTeachingAssignmentsPageData() {
   const academicYears = getSheetData("AcademicYears");
   academicYears.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
 
-  const classes = getSheetData("Classes");
-  const subjects = getSheetData("Subjects");
+  const classes = getCachedSheetData("Classes", 60);
+  const subjects = handleGetSubjects().data;
 
-  const users = getSheetData("Users");
-  const userRoles = getSheetData("UserRoles");
+  const users = getCachedSheetData("Users", 300);
+  const userRoles = getCachedSheetData("UserRoles", 300);
   const subjectTeacherUserIds = userRoles
     .filter((r) => r.RoleType === "SUBJECT_TEACHER")
     .map((r) => r.UserID);
@@ -1394,14 +3691,264 @@ function handleAddTeachingAssignment(body) {
   }
 }
 
-function handleDeleteTeachingAssignment(teachingAssignmentId) {
-  const rowIndex = findRowIndexByColumnValue("TeachingAssignments", "TeachingAssignmentID", teachingAssignmentId);
-  if (rowIndex === -1) {
+/**
+ * เพิ่มมอบหมายการสอนหลายห้องพร้อมกันในครั้งเดียว (ครู 1 คน + วิชา 1 วิชา + ห้องที่สอนหลายห้อง)
+ * ตรวจสอบฝั่ง Server ครบทุกเงื่อนไข ไม่พึ่งพาการกรองข้อมูลจากฝั่งเว็บอย่างเดียว:
+ * - ห้องเรียนต้องมีอยู่จริงและอยู่ในปีการศึกษาที่ระบุ
+ * - ระดับชั้นของห้องต้องตรงกับระดับชั้นของวิชา
+ * - ไม่ซ้ำกับที่มอบหมายไว้แล้ว และไม่เกิน 4 คนต่อวิชา/ห้อง
+ * ห้องที่ไม่ผ่านเงื่อนไขจะถูกข้าม (ไม่ทำให้ทั้งคำขอ error) พร้อมแจ้งเหตุผลกลับไปให้ผู้ใช้เห็น
+ */
+function handleAddTeachingAssignmentsBulk(body) {
+  const academicYearId = body.academicYearId;
+  const subjectId = body.subjectId;
+  const teacherUserId = body.teacherUserId;
+  const classIds = body.classIds;
+
+  if (!academicYearId || !subjectId || !teacherUserId || !Array.isArray(classIds) || classIds.length === 0) {
+    return { status: "error", message: "กรุณาระบุครู วิชา และห้องที่สอนให้ครบถ้วน" };
+  }
+
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
+  }
+
+  try {
+    const subjects = getSheetData("Subjects");
+    const subject = subjects.find((s) => String(s.SubjectID) === String(subjectId));
+    if (!subject) {
+      return { status: "error", message: "ไม่พบวิชานี้ในระบบ" };
+    }
+
+    const classes = getSheetData("Classes");
+    const assignments = getSheetData("TeachingAssignments");
+
+    let maxNum = 0;
+    assignments.forEach((a) => {
+      const match = String(a.TeachingAssignmentID).match(/^TA(\d+)$/);
+      if (match) {
+        const n = parseInt(match[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+
+    const newRows = [];
+    const skipped = [];
+    const addedCountByClass = {}; // กันกรณีห้องเดียวกันถูกส่งซ้ำมาในคำขอเดียว
+
+    classIds.forEach((classId) => {
+      const cls = classes.find((c) => String(c.ClassID) === String(classId));
+
+      if (!cls || String(cls.AcademicYearID) !== String(academicYearId)) {
+        skipped.push(classId + " (ไม่พบห้องเรียนนี้ในปีการศึกษาที่ระบุ)");
+        return;
+      }
+      if (String(cls.GradeLevel) !== String(subject.GradeLevel)) {
+        skipped.push(`${cls.GradeLevel}/${cls.RoomNumber} (ระดับชั้นไม่ตรงกับวิชา)`);
+        return;
+      }
+
+      const sameGroup = assignments.filter(
+        (a) =>
+          String(a.ClassID) === String(classId) &&
+          String(a.SubjectID) === String(subjectId) &&
+          String(a.AcademicYearID) === String(academicYearId)
+      );
+
+      if (sameGroup.some((a) => String(a.TeacherUserID) === String(teacherUserId))) {
+        skipped.push(`${cls.GradeLevel}/${cls.RoomNumber} (ครูคนนี้ถูกมอบหมายไว้แล้ว)`);
+        return;
+      }
+
+      const currentCount = sameGroup.length + (addedCountByClass[classId] || 0);
+      if (currentCount >= 4) {
+        skipped.push(`${cls.GradeLevel}/${cls.RoomNumber} (มีครูผู้สอนครบ 4 คนแล้ว)`);
+        return;
+      }
+
+      maxNum += 1;
+      const newId = "TA" + String(maxNum).padStart(4, "0");
+      newRows.push([newId, academicYearId, classId, subjectId, teacherUserId]);
+      addedCountByClass[classId] = currentCount + 1;
+    });
+
+    if (newRows.length > 0) {
+      const sheet = SS.getSheetByName("TeachingAssignments");
+      const lastRow = sheet.getLastRow();
+      sheet.getRange(lastRow + 1, 1, newRows.length, 5).setValues(newRows);
+      invalidateSheetCache("TeachingAssignments");
+    }
+
+    const message =
+      newRows.length > 0
+        ? `มอบหมายสำเร็จ ${newRows.length} ห้อง` + (skipped.length > 0 ? ` (ข้าม ${skipped.length} ห้อง: ${skipped.join(", ")})` : "")
+        : `ไม่สามารถมอบหมายห้องใดได้เลย: ${skipped.join(", ")}`;
+
+    return {
+      status: newRows.length > 0 ? "success" : "error",
+      message: message,
+      data: { addedCount: newRows.length, skipped: skipped },
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * นำมอบหมายการสอนออก
+ * ถ้าวิชา/ห้อง/ปีนี้มีคะแนนที่กรอกไว้แล้ว (StudentScores) จะยังไม่ลบทันที แต่ตอบกลับ status "confirm_required"
+ * พร้อมข้อความเตือนจำนวนคะแนนที่พบ ให้ฝั่งเว็บถามยืนยันอีกครั้งก่อนส่งซ้ำพร้อม force: true
+ * (ข้อมูลคะแนนจะไม่ถูกลบไปด้วย เพียงแต่ครูจะเข้าถึงไม่ได้จนกว่าจะมอบหมายให้ใหม่)
+ */
+/**
+ * แก้ไขข้อมูลมอบหมายการสอนที่มีอยู่แล้ว (เปลี่ยนครู/วิชา/ห้อง/ปีการศึกษาของแถวเดิมได้)
+ * body: { teachingAssignmentId, academicYearId, classId, subjectId, teacherUserId, force }
+ * - ถ้าเปลี่ยนวิชา/ห้อง/ปีการศึกษาไปจากเดิม และของเดิมมีคะแนนกรอกไว้แล้ว ต้องส่ง force:true มายืนยันอีกครั้ง
+ *   (คะแนนอ้างอิงตาม ClassID/SubjectID/AcademicYearID ไม่ใช่ TeachingAssignmentID
+ *    เปลี่ยนแล้วจะเข้าถึงคะแนนชุดเดิมไม่ได้ทันที แต่ข้อมูลคะแนนจะไม่ถูกลบ)
+ */
+function handleUpdateTeachingAssignment(body) {
+  const teachingAssignmentId = body.teachingAssignmentId;
+  const academicYearId = body.academicYearId;
+  const classId = body.classId;
+  const subjectId = body.subjectId;
+  const teacherUserId = body.teacherUserId;
+  const force = !!body.force;
+
+  if (!teachingAssignmentId || !academicYearId || !classId || !subjectId || !teacherUserId) {
+    return { status: "error", message: "กรุณาระบุข้อมูลให้ครบถ้วน" };
+  }
+
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
+  }
+
+  try {
+    const assignments = getSheetData("TeachingAssignments");
+    const original = assignments.find((a) => String(a.TeachingAssignmentID) === String(teachingAssignmentId));
+    if (!original) {
+      return { status: "error", message: "ไม่พบข้อมูลมอบหมายการสอนนี้" };
+    }
+
+    const classes = getSheetData("Classes");
+    const cls = classes.find((c) => String(c.ClassID) === String(classId));
+    if (!cls || String(cls.AcademicYearID) !== String(academicYearId)) {
+      return { status: "error", message: "ไม่พบห้องเรียนนี้ในปีการศึกษาที่ระบุ" };
+    }
+
+    const subjects = getSheetData("Subjects");
+    const subject = subjects.find((s) => String(s.SubjectID) === String(subjectId));
+    if (!subject) {
+      return { status: "error", message: "ไม่พบวิชานี้ในระบบ" };
+    }
+    if (String(cls.GradeLevel) !== String(subject.GradeLevel)) {
+      return { status: "error", message: "ระดับชั้นของห้องเรียนไม่ตรงกับวิชาที่เลือก" };
+    }
+
+    const sameGroup = assignments.filter(
+      (a) =>
+        String(a.TeachingAssignmentID) !== String(teachingAssignmentId) &&
+        String(a.ClassID) === String(classId) &&
+        String(a.SubjectID) === String(subjectId) &&
+        String(a.AcademicYearID) === String(academicYearId)
+    );
+    if (sameGroup.some((a) => String(a.TeacherUserID) === String(teacherUserId))) {
+      return { status: "error", message: "ครูคนนี้ถูกมอบหมายไว้แล้วสำหรับวิชา/ห้องนี้" };
+    }
+    if (sameGroup.length >= 4) {
+      return { status: "error", message: "ห้องเรียนนี้มีครูผู้สอนวิชานี้ครบ 4 คนแล้ว" };
+    }
+
+    const scopeChanged =
+      String(original.ClassID) !== String(classId) ||
+      String(original.SubjectID) !== String(subjectId) ||
+      String(original.AcademicYearID) !== String(academicYearId);
+
+    if (scopeChanged && !force) {
+      const scoreCount = getSheetData("StudentScores").filter(
+        (s) =>
+          String(s.ClassID) === String(original.ClassID) &&
+          String(s.SubjectID) === String(original.SubjectID) &&
+          String(s.AcademicYearID) === String(original.AcademicYearID)
+      ).length;
+
+      if (scoreCount > 0) {
+        return {
+          status: "confirm_required",
+          message: `วิชา/ห้องเดิมมีคะแนนที่กรอกไว้แล้ว ${scoreCount} รายการ หากเปลี่ยนวิชา/ห้อง/ปีการศึกษา จะเข้าถึงคะแนนชุดเดิมไม่ได้ทันที (ข้อมูลจะไม่ถูกลบ จะกลับมาเห็นได้ถ้ามอบหมายกลับค่าเดิมอีกครั้ง) ต้องการดำเนินการต่อหรือไม่`,
+        };
+      }
+    }
+
+    const rowIndex = findRowIndexByColumnValue("TeachingAssignments", "TeachingAssignmentID", teachingAssignmentId);
+    if (rowIndex === -1) {
+      return { status: "error", message: "ไม่พบข้อมูลมอบหมายการสอนนี้" };
+    }
+
+    SS.getSheetByName("TeachingAssignments")
+      .getRange(rowIndex, 1, 1, 5)
+      .setValues([[teachingAssignmentId, academicYearId, classId, subjectId, teacherUserId]]);
+
+    invalidateSheetCache("TeachingAssignments");
+    return { status: "success", message: "บันทึกการแก้ไขเรียบร้อยแล้ว" };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function handleDeleteTeachingAssignment(body) {
+  const teachingAssignmentId = body.teachingAssignmentId;
+  const force = !!body.force;
+
+  if (!teachingAssignmentId) {
     return { status: "error", message: "ไม่พบข้อมูลมอบหมายการสอนนี้" };
   }
-  SS.getSheetByName("TeachingAssignments").deleteRow(rowIndex);
-  invalidateSheetCache("TeachingAssignments");
-  return { status: "success" };
+
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
+  }
+
+  try {
+    const assignments = getSheetData("TeachingAssignments");
+    const target = assignments.find((a) => String(a.TeachingAssignmentID) === String(teachingAssignmentId));
+
+    if (!target) {
+      return { status: "error", message: "ไม่พบข้อมูลมอบหมายการสอนนี้" };
+    }
+
+    if (!force) {
+      const scoreCount = getSheetData("StudentScores").filter(
+        (s) =>
+          String(s.ClassID) === String(target.ClassID) &&
+          String(s.SubjectID) === String(target.SubjectID) &&
+          String(s.AcademicYearID) === String(target.AcademicYearID)
+      ).length;
+
+      if (scoreCount > 0) {
+        return {
+          status: "confirm_required",
+          message: `วิชา/ห้องนี้มีคะแนนที่กรอกไว้แล้ว ${scoreCount} รายการ หากนำครูออก จะเข้าถึงคะแนนเหล่านี้ไม่ได้ทันที (ข้อมูลจะไม่ถูกลบ จะกลับมาเห็นได้ถ้ามอบหมายให้ใหม่อีกครั้ง) ต้องการดำเนินการต่อหรือไม่`,
+        };
+      }
+    }
+
+    const rowIndex = findRowIndexByColumnValue("TeachingAssignments", "TeachingAssignmentID", teachingAssignmentId);
+    if (rowIndex === -1) {
+      return { status: "error", message: "ไม่พบข้อมูลมอบหมายการสอนนี้" };
+    }
+
+    SS.getSheetByName("TeachingAssignments").deleteRow(rowIndex);
+    invalidateSheetCache("TeachingAssignments");
+    return { status: "success" };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 
@@ -1573,6 +4120,15 @@ function handleAddGradeSubComponent(body) {
     return { status: "error", message: "คุณไม่มีสิทธิ์แก้ไขข้อมูลวิชานี้" };
   }
 
+  // ห้ามแก้โครงสร้างช่องเก็บคะแนน (เพิ่ม/ลบ) ถ้าภาคเรียนนี้ของวิชานี้มีห้องใดห้องหนึ่ง "ส่งผลการเรียน" ไปแล้ว
+  // (GradeComponents/GradeSubComponents ใช้ร่วมกันทุกห้องของวิชา/ปี/ภาคเรียนเดียวกัน ไม่ได้แยกตามห้อง จึงต้องเช็คทุกห้อง)
+  if (isSemesterSubmittedForAnyClass(component.SubjectID, component.AcademicYearID, component.Semester)) {
+    return {
+      status: "error",
+      message: `ไม่สามารถแก้ไขโครงสร้างช่องเก็บคะแนนได้ เนื่องจากภาคเรียนที่ ${component.Semester} ของวิชานี้มีบางห้อง "ส่งผลการเรียน" ไปแล้ว กรุณา "ถอนผลการเรียน" ของห้องนั้นก่อน จึงจะแก้ไขโครงสร้างคะแนนได้`,
+    };
+  }
+
   // ล็อกกันช่องเก็บคะแนนซ้ำรหัส/เกิน 10 ช่อง กรณีกดเพิ่มพร้อมกัน (เช่น กดปุ่มรัว หรือเปิดหลายแท็บ)
   const lock = LockService.getScriptLock();
   const gotLock = lock.tryLock(20000);
@@ -1581,6 +4137,14 @@ function handleAddGradeSubComponent(body) {
   }
 
   try {
+    // เช็คซ้ำอีกครั้งหลังได้ lock แล้ว เผื่อมีการส่งผลการเรียนแทรกเข้ามาระหว่างรอคิว
+    if (isSemesterSubmittedForAnyClass(component.SubjectID, component.AcademicYearID, component.Semester)) {
+      return {
+        status: "error",
+        message: `ไม่สามารถแก้ไขโครงสร้างช่องเก็บคะแนนได้ เนื่องจากภาคเรียนที่ ${component.Semester} ของวิชานี้มีบางห้อง "ส่งผลการเรียน" ไปแล้ว กรุณา "ถอนผลการเรียน" ของห้องนั้นก่อน จึงจะแก้ไขโครงสร้างคะแนนได้`,
+      };
+    }
+
     const allSub = getSheetData("GradeSubComponents");
     const existing = allSub.filter((sc) => String(sc.ComponentID) === String(componentId));
 
@@ -1627,13 +4191,43 @@ function handleDeleteGradeSubComponent(body) {
     return { status: "error", message: "คุณไม่มีสิทธิ์แก้ไขข้อมูลวิชานี้" };
   }
 
-  const rowIndex = findRowIndexByColumnValue("GradeSubComponents", "SubComponentID", subComponentId);
-  if (rowIndex === -1) {
-    return { status: "error", message: "ไม่พบช่องเก็บคะแนนนี้" };
+  // ห้ามแก้โครงสร้างช่องเก็บคะแนน (เพิ่ม/ลบ) ถ้าภาคเรียนนี้ของวิชานี้มีห้องใดห้องหนึ่ง "ส่งผลการเรียน" ไปแล้ว (เหตุผลเดียวกับ handleAddGradeSubComponent)
+  if (isSemesterSubmittedForAnyClass(component.SubjectID, component.AcademicYearID, component.Semester)) {
+    return {
+      status: "error",
+      message: `ไม่สามารถแก้ไขโครงสร้างช่องเก็บคะแนนได้ เนื่องจากภาคเรียนที่ ${component.Semester} ของวิชานี้มีบางห้อง "ส่งผลการเรียน" ไปแล้ว กรุณา "ถอนผลการเรียน" ของห้องนั้นก่อน จึงจะแก้ไขโครงสร้างคะแนนได้`,
+    };
   }
-  SS.getSheetByName("GradeSubComponents").deleteRow(rowIndex);
-  invalidateSheetCache("GradeSubComponents");
-  return { status: "success" };
+
+  // ล็อกกันการลบชนกัน (เช่น ครูที่สอนวิชาเดียวกันคนละห้องเปิดหน้านี้พร้อมกันแล้วกดลบคนละช่องใกล้ๆ กัน)
+  // GradeComponents/GradeSubComponents ใช้ร่วมกันทุกห้องของวิชา/ปี/ภาคเรียนเดียวกัน ถ้าไม่ล็อก ตำแหน่งแถวที่หาไว้ก่อนลบ
+  // อาจคลาดเคลื่อนไปจากแถวจริงถ้ามีการลบแถวอื่นแทรกเข้ามาก่อนพอดี ทำให้ลบช่องเก็บคะแนนผิดช่อง/ผิดวิชาไปโดยไม่ตั้งใจ — 5 ต.ค. 2569
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(20000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
+  }
+
+  try {
+    // เช็คซ้ำอีกครั้งหลังได้ lock แล้ว เผื่อมีการส่งผลการเรียนแทรกเข้ามาระหว่างรอคิว (เหตุผลเดียวกับ handleAddGradeSubComponent)
+    if (isSemesterSubmittedForAnyClass(component.SubjectID, component.AcademicYearID, component.Semester)) {
+      return {
+        status: "error",
+        message: `ไม่สามารถแก้ไขโครงสร้างช่องเก็บคะแนนได้ เนื่องจากภาคเรียนที่ ${component.Semester} ของวิชานี้มีบางห้อง "ส่งผลการเรียน" ไปแล้ว กรุณา "ถอนผลการเรียน" ของห้องนั้นก่อน จึงจะแก้ไขโครงสร้างคะแนนได้`,
+      };
+    }
+
+    // หาตำแหน่งแถว "หลังได้ lock แล้ว" เท่านั้น (ข้อมูลสดล่าสุด ไม่ใช่ตำแหน่งที่หาไว้ก่อนเข้าคิว) เพื่อไม่ให้ลบแถวผิดถ้ามีคนอื่นลบแถวอื่นแทรกไปก่อน
+    const rowIndex = findRowIndexByColumnValue("GradeSubComponents", "SubComponentID", subComponentId);
+    if (rowIndex === -1) {
+      return { status: "error", message: "ไม่พบช่องเก็บคะแนนนี้" };
+    }
+    SS.getSheetByName("GradeSubComponents").deleteRow(rowIndex);
+    invalidateSheetCache("GradeSubComponents");
+    return { status: "success" };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function handleGetGradeEntryPageData(body) {
@@ -1677,10 +4271,12 @@ function handleGetGradeEntryPageData(body) {
   // เช็คว่า "ภาคเรียนนี้" ของวิชา/ห้องนี้ถูกส่งผลการเรียนไปแล้วหรือยัง (แยกเช็คเป็นรายภาคเรียน)
   // ถ้าส่งไปแล้ว หน้าเว็บจะล็อกการแก้ไขคะแนนของภาคเรียนนี้ เพื่อไม่ให้ผลการเรียนที่ส่งไปเพี้ยนไปจากคะแนนจริง
   const isSubmitted = isSemesterSubmitted(subjectId, academicYearId, classId, semester);
+  // เช็คว่านายทะเบียนเปิดให้บันทึกคะแนนของปี/ภาคเรียนนี้อยู่หรือไม่ (ถ้าไม่เคยตั้งค่าไว้ ถือว่าเปิดเสมอ)
+  const isPeriodOpen = isGradingPeriodOpen(academicYearId, semester);
 
   return {
     status: "success",
-    data: { components, students: studentList, scores, isSubmitted },
+    data: { components, students: studentList, scores, isSubmitted, isPeriodOpen },
   };
 }
 
@@ -1706,6 +4302,15 @@ function handleSaveStudentScores(body) {
     return {
       status: "error",
       message: `ไม่สามารถแก้ไขคะแนนได้ เนื่องจากภาคเรียนที่ ${semester} ของวิชา/ห้องนี้ "ส่งผลการเรียน" ไปแล้ว กรุณา "ถอนผลการเรียน" ในเมนูตัดสินผลการเรียนก่อน จึงจะแก้ไขคะแนนได้`,
+    };
+  }
+
+  // เช็คว่าอยู่ในช่วงเวลาที่นายทะเบียนเปิดให้บันทึกคะแนนของภาคเรียนนี้หรือไม่ (ถ้าไม่เคยตั้งค่าไว้ ถือว่าเปิดเสมอ)
+  // หมดเวลาแล้ว = ดูข้อมูลได้อย่างเดียว ห้ามบันทึก/แก้ไขคะแนนต่อ
+  if (!isGradingPeriodOpen(academicYearId, semester)) {
+    return {
+      status: "error",
+      message: `ไม่สามารถบันทึกคะแนนได้ เนื่องจากยังไม่ถึง หรือพ้นช่วงเวลาที่นายทะเบียนกำหนดให้บันทึกคะแนนของภาคเรียนที่ ${semester} แล้ว`,
     };
   }
 
@@ -1756,6 +4361,15 @@ function handleSaveStudentScores(body) {
   }
 
   try {
+    // ตรวจซ้ำอีกครั้ง "หลังได้ lock แล้ว" (กันกรณีที่มีการ "ส่งผลการเรียน" ของภาคเรียนนี้แทรกเข้ามาระหว่างที่ request นี้
+    // เพิ่งผ่านการเช็คด้านบนแต่ยังไม่ได้คิว lock พอดี ซึ่งจะทำให้คะแนนถูกบันทึกทับหลังผลถูกส่ง/อนุมัติไปแล้วโดยไม่ตั้งใจ)
+    if (isSemesterSubmitted(subjectId, academicYearId, classId, semester)) {
+      return {
+        status: "error",
+        message: `ไม่สามารถแก้ไขคะแนนได้ เนื่องจากภาคเรียนที่ ${semester} ของวิชา/ห้องนี้ "ส่งผลการเรียน" ไปแล้ว กรุณา "ถอนผลการเรียน" ในเมนูตัดสินผลการเรียนก่อน จึงจะแก้ไขคะแนนได้`,
+      };
+    }
+
     const sheet = SS.getSheetByName("StudentScores");
     const data = sheet.getDataRange().getValues();
     const headers = data[0];
@@ -1781,6 +4395,7 @@ function handleSaveStudentScores(body) {
     const validScores = scores.filter((s) => s.score !== "" && s.score !== null && s.score !== undefined);
     const incomingKeys = {};
     const rowsToAppend = [];
+    const updatedRows = []; // { row, score } เฉพาะแถวที่ค่าคะแนนเปลี่ยนจริงเท่านั้น
     const scoreColNum = colIndex.Score + 1;
 
     validScores.forEach((s) => {
@@ -1788,15 +4403,21 @@ function handleSaveStudentScores(body) {
       incomingKeys[key] = true;
 
       if (existingMap[key]) {
-        // มีแถวเดิมอยู่แล้ว -> อัพเดทเฉพาะค่าคะแนนในหน่วยความจำ (เขียนกลับทีเดียวด้านล่าง เร็วกว่าการ setValue ทีละเซลล์)
-        data[existingMap[key] - 1][colIndex.Score] = Number(s.score);
+        const rowNum = existingMap[key];
+        const newScore = Number(s.score);
+        if (Number(data[rowNum - 1][colIndex.Score]) !== newScore) {
+          updatedRows.push({ row: rowNum, score: newScore });
+        }
       } else {
         rowsToAppend.push(s);
       }
     });
 
-    // เขียนค่าที่อัพเดททั้งหมดกลับในครั้งเดียว (แทนการลบ/สร้างใหม่ทั้งหมด)
-    sheet.getRange(1, 1, data.length, headers.length).setValues(data);
+    // เขียนกลับเฉพาะ "แถวที่คะแนนเปลี่ยนจริง" เท่านั้น (ไม่ rewrite ทั้งชีต StudentScores ทั้งเล่มเหมือนเดิม)
+    // เดิมเขียนทับทั้งชีตทุกครั้งที่บันทึก ทำให้ยิ่งชีตใหญ่ขึ้นเรื่อยๆ ตลอดปีการศึกษา เวลาที่ถือ lock ต่อครั้งก็นานขึ้นตามไปด้วย
+    // ส่งผลให้ตอนครูหลายสิบคนบันทึกคะแนนพร้อมกัน (เช่น ใกล้ปิดเทอม) ต้องรอคิวนานขึ้นเรื่อยๆ — ปรับให้แก้เฉพาะแถวของวิชา/ห้องที่กำลังบันทึกจริงๆ
+    // เพื่อให้เวลาถือ lock ต่อครั้งขึ้นอยู่กับ "จำนวนคะแนนที่บันทึกในครั้งนี้" (คงที่ต่อห้อง) ไม่ใช่ขนาดของชีตทั้งเล่ม — 5 ต.ค. 2569
+    updatedRows.forEach((u) => sheet.getRange(u.row, scoreColNum).setValue(u.score));
 
     // แถวเดิมที่ไม่มีคะแนนส่งมาแล้ว (ครูลบคะแนนออก) -> ลบทิ้งเฉพาะแถวที่จำเป็นจริงๆ
     const rowsToDelete = Object.keys(existingMap)
@@ -1890,16 +4511,242 @@ function computeSemesterScores(components, scoresMap, studentId) {
   return { raw70: raw70, exam30: exam30, total100: total100 };
 }
 
+// ===== ควบคุมช่วงเวลาเปิด/ปิดการบันทึกคะแนน (Sheet: GradingPeriods) =====
+// คอลัมน์ (เรียงตามลำดับ): AcademicYearID, Semester, StartDateTime, EndDateTime, ManualStatus
+// 1 แถว = 1 ช่วงเวลาที่นายทะเบียนอนุญาตให้บันทึกคะแนนของปีการศึกษา/ภาคเรียนนั้น (ตั้งแยกอิสระรายภาคเรียน)
+// ถ้าไม่มีแถวที่ตรงกับปี/ภาคเรียนใด ให้ถือว่า "เปิด" เสมอ (ค่าเริ่มต้น) เพื่อไม่ให้กระทบปีการศึกษาเดิมที่ยังไม่เคยตั้งค่านี้มาก่อน
+//
+// ManualStatus = ปุ่มเปิด/ปิดแบบไม่กำหนดเวลา (บังคับ override ทับ StartDateTime/EndDateTime เสมอ):
+//   "OPEN"   -> บังคับเปิดไม่จำกัดเวลา ไม่สนช่วงเวลาที่ตั้งไว้
+//   "CLOSED" -> บังคับปิดทันที ไม่สนช่วงเวลาที่ตั้งไว้
+//   ""       -> (ค่าเริ่มต้น/AUTO) ใช้ตาม StartDateTime/EndDateTime ตามปกติ
+
+function findGradingPeriodRow(academicYearId, semester) {
+  return getSheetData("GradingPeriods").find(
+    (r) =>
+      String(r.AcademicYearID) === String(academicYearId) &&
+      String(r.Semester) === String(semester)
+  );
+}
+
+function isGradingPeriodOpen(academicYearId, semester) {
+  const row = findGradingPeriodRow(academicYearId, semester);
+  if (!row) return true; // ยังไม่ได้ตั้งค่า -> เปิดให้บันทึกได้เสมอ
+
+  const manualStatus = String(row.ManualStatus || "").trim().toUpperCase();
+  if (manualStatus === "OPEN") return true; // บังคับเปิดไม่จำกัดเวลา
+  if (manualStatus === "CLOSED") return false; // บังคับปิดทันที
+
+  if (!row.StartDateTime || !row.EndDateTime) return true; // ยังไม่ได้ตั้งช่วงเวลา -> เปิดให้บันทึกได้เสมอ
+
+  const now = Date.now();
+  const start = new Date(row.StartDateTime).getTime();
+  const end = new Date(row.EndDateTime).getTime();
+  if (isNaN(start) || isNaN(end)) return true; // ข้อมูลวันที่ผิดปกติ -> ไม่ล็อก กันระบบพังจากข้อมูลเสีย
+
+  return now >= start && now <= end;
+}
+
+/**
+ * หาว่า "ภาคเรียนปัจจุบันที่เปิดให้บันทึกคะแนนอยู่" ของปีการศึกษานี้คือภาคเรียนไหน — ใช้สำหรับหน้าติดตามความคืบหน้าของนายทะเบียน
+ * หลักการ: ถ้าภาคเรียนที่ 2 เปิดอยู่ ถือว่าเป็นภาคเรียนปัจจุบัน (เพราะตามปกติต้องปิดภาคเรียนที่ 1 ก่อนจะเปิดภาคเรียนที่ 2)
+ * ถ้าไม่ใช่ ให้ดูภาคเรียนที่ 1 แทน (ถ้ายังไม่เคยตั้งค่า GradingPeriods ไว้เลย ถือว่าเปิดเสมอ จึงได้ภาคเรียนที่ 1 เป็นค่าเริ่มต้นไปโดยปริยาย)
+ * คืนค่า null ถ้าทั้งสองภาคเรียนถูกบังคับปิด หรือพ้นช่วงเวลาที่ตั้งไว้แล้วทั้งคู่ (ไม่มีภาคเรียนใดเปิดอยู่ตอนนี้เลย)
+ */
+function getCurrentOpenSemester(academicYearId) {
+  if (isGradingPeriodOpen(academicYearId, 2)) return 2;
+  if (isGradingPeriodOpen(academicYearId, 1)) return 1;
+  return null;
+}
+
+/**
+ * ดึงรายการช่วงเวลาบันทึกคะแนนทั้งหมด (ทุกปีการศึกษา/ภาคเรียน) พร้อมรายชื่อปีการศึกษา
+ * สำหรับหน้าตั้งค่า "ตั้งเวลาบันทึกคะแนน" (นายทะเบียน/ผู้ช่วยนายทะเบียน)
+ */
+function handleGetGradingPeriods() {
+  const academicYears = handleGetAcademicYears().data;
+  const periods = getSheetData("GradingPeriods");
+  return { status: "success", data: { academicYears, periods } };
+}
+
+/**
+ * ตั้ง/แก้ไข ช่วงเวลาที่อนุญาตให้บันทึกคะแนนของปีการศึกษา + ภาคเรียนที่ระบุ (upsert ทับแถวเดิมถ้ามีอยู่แล้ว)
+ */
+function handleSetGradingPeriod(body) {
+  const academicYearId = body.academicYearId;
+  const semester = Number(body.semester);
+  const startDateTime = body.startDateTime;
+  const endDateTime = body.endDateTime;
+
+  if (!academicYearId || (semester !== 1 && semester !== 2) || !startDateTime || !endDateTime) {
+    return { status: "error", message: "กรุณากรอกข้อมูลให้ครบถ้วน" };
+  }
+
+  const startMs = new Date(startDateTime).getTime();
+  const endMs = new Date(endDateTime).getTime();
+  if (isNaN(startMs) || isNaN(endMs) || endMs <= startMs) {
+    return { status: "error", message: "ช่วงเวลาไม่ถูกต้อง วันเวลาสิ้นสุดต้องอยู่หลังวันเวลาเริ่มต้น" };
+  }
+
+  const sheet = SS.getSheetByName("GradingPeriods");
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  const yearCol = headers.indexOf("AcademicYearID");
+  const semCol = headers.indexOf("Semester");
+  const startCol = headers.indexOf("StartDateTime");
+  const endCol = headers.indexOf("EndDateTime");
+  const manualCol = headers.indexOf("ManualStatus"); // อาจไม่มีในชีทเก่า ถ้าไม่พบให้ข้ามได้ ไม่ error
+
+  if (yearCol === -1 || semCol === -1 || startCol === -1 || endCol === -1) {
+    return { status: "error", message: "โครงสร้าง Sheet GradingPeriods ไม่ถูกต้อง" };
+  }
+
+  let rowIndex = -1;
+  for (let i = 1; i < values.length; i++) {
+    if (
+      String(values[i][yearCol]) === String(academicYearId) &&
+      String(values[i][semCol]) === String(semester)
+    ) {
+      rowIndex = i + 1; // เลขแถวจริง (1-based รวม header)
+      break;
+    }
+  }
+
+  if (rowIndex === -1) {
+    const newRow = headers.map((h) => {
+      if (h === "AcademicYearID") return academicYearId;
+      if (h === "Semester") return semester;
+      if (h === "StartDateTime") return startDateTime;
+      if (h === "EndDateTime") return endDateTime;
+      return ""; // รวมถึง ManualStatus ถ้ามีคอลัมน์นี้ -> เริ่มต้นเป็น AUTO เสมอ
+    });
+    sheet.appendRow(newRow);
+  } else {
+    sheet.getRange(rowIndex, startCol + 1).setValue(startDateTime);
+    sheet.getRange(rowIndex, endCol + 1).setValue(endDateTime);
+    // ตั้งช่วงเวลาใหม่ -> กลับไปใช้ตามช่วงเวลานี้เสมอ (ล้างสถานะบังคับเปิด/ปิดด้วยมือทิ้งไปโดยอัตโนมัติ)
+    if (manualCol !== -1) {
+      sheet.getRange(rowIndex, manualCol + 1).setValue("");
+    }
+  }
+
+  return { status: "success", message: "บันทึกช่วงเวลาบันทึกคะแนนเรียบร้อยแล้ว" };
+}
+
+/**
+ * ปุ่มเปิด/ปิดการบันทึกคะแนนแบบ "ไม่กำหนดเวลา" (บังคับ override ทับ StartDateTime/EndDateTime เสมอ)
+ * manualStatus: "OPEN" = บังคับเปิดไม่จำกัดเวลา, "CLOSED" = บังคับปิดทันที, "" = เคลียร์กลับไปใช้ตามช่วงเวลาที่ตั้งไว้ (AUTO)
+ */
+function handleSetGradingPeriodManualStatus(body) {
+  const academicYearId = body.academicYearId;
+  const semester = Number(body.semester);
+  const manualStatus = String(body.manualStatus || "").trim().toUpperCase();
+
+  if (!academicYearId || (semester !== 1 && semester !== 2)) {
+    return { status: "error", message: "กรุณาระบุปีการศึกษาและภาคเรียนให้ถูกต้อง" };
+  }
+  if (manualStatus !== "OPEN" && manualStatus !== "CLOSED" && manualStatus !== "") {
+    return { status: "error", message: "สถานะไม่ถูกต้อง" };
+  }
+
+  const sheet = SS.getSheetByName("GradingPeriods");
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0];
+  const yearCol = headers.indexOf("AcademicYearID");
+  const semCol = headers.indexOf("Semester");
+  const manualCol = headers.indexOf("ManualStatus");
+
+  if (yearCol === -1 || semCol === -1 || manualCol === -1) {
+    return {
+      status: "error",
+      message: "ไม่พบคอลัมน์ ManualStatus ใน Sheet GradingPeriods กรุณาเพิ่มคอลัมน์นี้ก่อนใช้งานปุ่มเปิด/ปิดแบบไม่กำหนดเวลา",
+    };
+  }
+
+  let rowIndex = -1;
+  for (let i = 1; i < values.length; i++) {
+    if (
+      String(values[i][yearCol]) === String(academicYearId) &&
+      String(values[i][semCol]) === String(semester)
+    ) {
+      rowIndex = i + 1; // เลขแถวจริง (1-based รวม header)
+      break;
+    }
+  }
+
+  if (rowIndex === -1) {
+    // ยังไม่เคยมีแถวของปี/ภาคเรียนนี้เลย -> สร้างแถวใหม่ เว้นช่วงเวลาว่างไว้ (ใช้ปุ่มบังคับเปิด/ปิดอย่างเดียวได้โดยไม่ต้องตั้งช่วงเวลา)
+    const newRow = headers.map((h) => {
+      if (h === "AcademicYearID") return academicYearId;
+      if (h === "Semester") return semester;
+      if (h === "ManualStatus") return manualStatus;
+      return "";
+    });
+    sheet.appendRow(newRow);
+  } else {
+    sheet.getRange(rowIndex, manualCol + 1).setValue(manualStatus);
+  }
+
+  return { status: "success", message: "บันทึกสถานะเรียบร้อยแล้ว" };
+}
+
+/**
+ * สถานะช่วงเวลาบันทึกคะแนนของปีการศึกษาปัจจุบัน (ภาคเรียนที่ 1 และ 2) สำหรับตัวนับถอยหลังที่ Header
+ * ใช้ได้ทุกบทบาทที่ login แล้ว (ตั้งใจไม่ใส่ไว้ใน ACTION_ROLES)
+ */
+function handleGetGradingPeriodStatus() {
+  const academicYears = handleGetAcademicYears().data;
+  const currentYear = academicYears.find(
+    (y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE"
+  ) || academicYears[0];
+  const academicYearId = currentYear ? currentYear.AcademicYearID : null;
+
+  const periods = [1, 2].map((semester) => {
+    const row = academicYearId ? findGradingPeriodRow(academicYearId, semester) : null;
+    const isConfigured = !!(row && row.StartDateTime && row.EndDateTime);
+    const manualStatus = row ? String(row.ManualStatus || "").trim().toUpperCase() : "";
+    return {
+      semester,
+      startDateTime: isConfigured ? row.StartDateTime : null,
+      endDateTime: isConfigured ? row.EndDateTime : null,
+      isConfigured,
+      manualStatus, // "OPEN" | "CLOSED" | "" (ใช้ตามช่วงเวลาปกติ)
+      isOpen: academicYearId ? isGradingPeriodOpen(academicYearId, semester) : true,
+    };
+  });
+
+  return { status: "success", data: { academicYearId, periods } };
+}
+
 // ===== สถานะการส่งผลการเรียนแยกรายภาคเรียน (Sheet: SemesterSubmissions) =====
 // คอลัมน์: SubmissionID, SubjectID, ClassID, AcademicYearID, Semester, UserID, Timestamp
 // เป็น "จุดล็อก" ของแต่ละภาคเรียนแยกอิสระจากกัน ครูสามารถส่งภาคเรียนที่ 1 ได้ก่อน โดยยังไม่ต้องมีคะแนนภาคเรียนที่ 2 เลย
 
+/**
+ * ปรับเป็นอ่านผ่านแคช (getCachedSheetData) แทนการอ่านทั้งชีตสดทุกครั้ง (getSheetData) — 26 ก.ย. 2569
+ * เดิมฟังก์ชันนี้ถูกเรียกซ้ำๆ ภายในลูปวนทุกรายวิชาของหน้ารายงาน ปถ.06 (2 ครั้ง/วิชา สำหรับภาคเรียนที่ 1 และ 2)
+ * ทำให้ห้องที่มีหลายรายวิชาต้องอ่านทั้งชีต SemesterSubmissions ซ้ำหลายสิบครั้งต่อการเปิดดูรายงาน 1 ครั้ง ทำให้หน้าโหลดช้ามาก
+ * แคชไว้ 60 วินาที และต้องเรียก invalidateSheetCache("SemesterSubmissions") ทันทีทุกจุดที่เขียน/ลบแถวในชีตนี้
+ * (ดู handleSubmitFinalResults / handleWithdrawFinalResults) เพื่อไม่ให้เห็นสถานะการส่งผลเก่าค้างอยู่
+ */
 function isSemesterSubmitted(subjectId, academicYearId, classId, semester) {
-  return getSheetData("SemesterSubmissions").some(
+  return getCachedSheetData("SemesterSubmissions", 60).some(
     (r) =>
       String(r.SubjectID) === String(subjectId) &&
       String(r.AcademicYearID) === String(academicYearId) &&
       String(r.ClassID) === String(classId) &&
+      String(r.Semester) === String(semester)
+  );
+}
+
+// เหมือน isSemesterSubmitted() แต่ไม่เจาะจงห้องเรียน (ไม่มี classId) — ใช้ตรวจก่อนแก้ "โครงสร้าง" ช่องเก็บคะแนน
+// (GradeComponents/GradeSubComponents) ซึ่งใช้ร่วมกันทุกห้องของวิชา/ปีการศึกษา/ภาคเรียนเดียวกัน จึงต้องเช็คว่ามีห้องใดห้องหนึ่ง
+// ส่งผลการเรียนไปแล้วหรือยัง ไม่ใช่เช็คเฉพาะห้องเดียว — 27 ก.ย. 2569
+function isSemesterSubmittedForAnyClass(subjectId, academicYearId, semester) {
+  return getCachedSheetData("SemesterSubmissions", 60).some(
+    (r) =>
+      String(r.SubjectID) === String(subjectId) &&
+      String(r.AcademicYearID) === String(academicYearId) &&
       String(r.Semester) === String(semester)
   );
 }
@@ -2163,6 +5010,74 @@ function handleGetFinalizePageData(body) {
   };
 }
 
+/**
+ * ตรวจสอบว่านักเรียนทุกคนในห้องนี้ กรอกคะแนนครบทุกช่องเก็บคะแนนของวิชา/ภาคเรียนนี้แล้วหรือยัง
+ * ใช้เป็นเงื่อนไขก่อนอนุญาตให้ "ส่งผลการเรียน" (ปิดช่องโหว่เดิมที่ส่งได้แม้คะแนนไม่ครบ แล้วช่องที่ขาดถูกคิดเป็น 0 แบบเงียบๆ) — 5 ต.ค. 2569
+ * คืน array ของนักเรียนที่ยังขาดคะแนน (ว่าง = ครบทุกคนแล้ว) ถ้ายังไม่ได้ตั้งค่าช่องเก็บคะแนนของภาคเรียนนี้เลย ถือว่านักเรียนทุกคน "ขาดคะแนน" เช่นกัน
+ */
+function getMissingScoreStudents(subjectId, academicYearId, classId, semester) {
+  const enrollments = getCachedSheetData("StudentEnrollments", 60).filter((e) => String(e.ClassID) === String(classId));
+  if (enrollments.length === 0) return [];
+
+  const allStudents = getCachedSheetData("Students", 120);
+  const studentInfo = (studentId) => {
+    const st = allStudents.find((s) => String(s.StudentID) === String(studentId));
+    return st ? (st.PrefixName || "") + (st.FirstName || "") + " " + (st.LastName || "") : String(studentId);
+  };
+
+  const components = getCachedSheetData("GradeComponents", 120).filter(
+    (c) =>
+      String(c.SubjectID) === String(subjectId) &&
+      String(c.AcademicYearID) === String(academicYearId) &&
+      Number(c.Semester) === Number(semester)
+  );
+
+  if (components.length === 0) {
+    // ยังไม่ได้ตั้งค่าช่องเก็บคะแนนของภาคเรียนนี้เลย = ไม่มีช่องให้กรอก ถือว่ายังกรอกคะแนนไม่ครบทั้งห้อง
+    return enrollments
+      .map((e) => ({ studentId: e.StudentID, studentNumber: e.StudentNumber, fullName: studentInfo(e.StudentID) }))
+      .sort((a, b) => Number(a.studentNumber) - Number(b.studentNumber));
+  }
+
+  const subComponentsByComponentId = {};
+  getCachedSheetData("GradeSubComponents", 60).forEach((sc) => {
+    const key = String(sc.ComponentID);
+    if (!subComponentsByComponentId[key]) subComponentsByComponentId[key] = [];
+    subComponentsByComponentId[key].push(sc);
+  });
+
+  const scores = getSheetData("StudentScores").filter(
+    (sc) =>
+      String(sc.ClassID) === String(classId) &&
+      String(sc.SubjectID) === String(subjectId) &&
+      String(sc.AcademicYearID) === String(academicYearId) &&
+      Number(sc.Semester) === Number(semester)
+  );
+
+  const missing = [];
+  enrollments.forEach((e) => {
+    const sid = String(e.StudentID);
+    const scoresForStudent = scores.filter((sc) => String(sc.StudentID) === sid);
+
+    const isMissing = components.some((c) => {
+      const isFinalExam = c.ComponentType === "ปลายภาค";
+      const expected = isFinalExam ? 1 : (subComponentsByComponentId[String(c.ComponentID)] || []).length;
+      const recorded = isFinalExam
+        ? scoresForStudent.filter((sc) => String(sc.ComponentID) === String(c.ComponentID)).length
+        : new Set(
+            scoresForStudent.filter((sc) => String(sc.ComponentID) === String(c.ComponentID)).map((sc) => sc.SubComponentID)
+          ).size;
+      return recorded < expected;
+    });
+
+    if (isMissing) {
+      missing.push({ studentId: e.StudentID, studentNumber: e.StudentNumber, fullName: studentInfo(e.StudentID) });
+    }
+  });
+
+  return missing.sort((a, b) => Number(a.studentNumber) - Number(b.studentNumber));
+}
+
 function handleSubmitFinalResults(body) {
   const subjectId = body.subjectId;
   const academicYearId = body.academicYearId;
@@ -2185,6 +5100,16 @@ function handleSubmitFinalResults(body) {
     return { status: "error", message: "ไม่พบนักเรียนในห้องเรียนนี้" };
   }
 
+  // ปิดช่องโหว่: ห้ามส่งผลการเรียนถ้ายังมีนักเรียนกรอกคะแนนไม่ครบทุกช่องเก็บคะแนนของภาคเรียนนี้ (เช็คก่อนเข้าคิว lock เพื่อตอบกลับเร็วถ้าเห็นได้ชัดว่าไม่ครบ)
+  const missingBeforeLock = getMissingScoreStudents(subjectId, academicYearId, classId, semester);
+  if (missingBeforeLock.length > 0) {
+    return {
+      status: "error",
+      message: `ไม่สามารถส่งผลการเรียนได้ เนื่องจากยังมีนักเรียน ${missingBeforeLock.length} คน กรอกคะแนนภาคเรียนที่ ${semester} ไม่ครบทุกช่องเก็บคะแนน กรุณากรอกคะแนนให้ครบทุกคนก่อนส่งผลการเรียน`,
+      missingStudents: missingBeforeLock,
+    };
+  }
+
   const lock = LockService.getScriptLock();
   const gotLock = lock.tryLock(20000);
   if (!gotLock) {
@@ -2192,6 +5117,16 @@ function handleSubmitFinalResults(body) {
   }
 
   try {
+    // ตรวจซ้ำอีกครั้ง "หลังได้ lock แล้ว" เผื่อมีคะแนนบางช่องถูกลบออกไประหว่างที่คำขอนี้กำลังรอคิวพอดี (กันคะแนนไม่ครบหลุดเข้า FinalResults)
+    const missingAfterLock = getMissingScoreStudents(subjectId, academicYearId, classId, semester);
+    if (missingAfterLock.length > 0) {
+      return {
+        status: "error",
+        message: `ไม่สามารถส่งผลการเรียนได้ เนื่องจากยังมีนักเรียน ${missingAfterLock.length} คน กรอกคะแนนภาคเรียนที่ ${semester} ไม่ครบทุกช่องเก็บคะแนน กรุณากรอกคะแนนให้ครบทุกคนก่อนส่งผลการเรียน`,
+        missingStudents: missingAfterLock,
+      };
+    }
+
     // ต้องส่งภาคเรียนที่ 1 ก่อนเสมอ จึงจะส่งภาคเรียนที่ 2 ได้ (เช็คซ้ำในนี้ด้วยเพราะถืออยู่ในโซนที่ล็อกแล้ว
     // กันกรณีภาคเรียนที่ 1 เพิ่งถูกถอนออกไปพร้อมๆ กับที่คำขอนี้กำลังรอคิว)
     if (semester === 2 && !isSemesterSubmitted(subjectId, academicYearId, classId, 1)) {
@@ -2218,6 +5153,7 @@ function handleSubmitFinalResults(body) {
         userId,
         new Date().toISOString(),
       ]);
+      invalidateSheetCache("SemesterSubmissions");
     }
 
     // ส่งครบทั้ง 2 ภาคเรียนแล้วหรือยัง ถ้าครบให้คำนวณคะแนนปีการศึกษาจริงและบันทึกลง FinalResults
@@ -2278,6 +5214,7 @@ function handleWithdrawFinalResults(body) {
       }
     }
     deleteSheetRowsDescending(sheet, rowsToDelete);
+    invalidateSheetCache("SemesterSubmissions");
 
     // ถอนภาคเรียนนี้ออกแล้ว ผลการเรียนทั้งปีย่อมไม่สมบูรณ์อีกต่อไป -> sync ให้ FinalResults ถูกลบออกไปด้วย
     syncFinalResultsForYear(subjectId, academicYearId, classId, body.userId);
@@ -2574,7 +5511,7 @@ function handleGenerateSubjectReport(body) {
     const exportUrl =
       "https://docs.google.com/spreadsheets/d/" +
       copyFile.getId() +
-      "/export?format=pdf&size=A4&portrait=true&fitw=true&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false";
+      "/export?format=pdf&size=A4&portrait=true&scale=4&top_margin=0.25&bottom_margin=0.25&left_margin=0.25&right_margin=0.25&horizontal_alignment=CENTER&vertical_alignment=TOP&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false";
     const pdfResponse = UrlFetchApp.fetch(exportUrl, {
       headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
       muteHttpExceptions: true,
