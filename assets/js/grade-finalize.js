@@ -294,4 +294,8 @@ async function runFinalizeAction(action, semester, loadingText, successText) {
       Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
       renderFinalizeTable();
     }
+  } catch (err) {
+    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
+    renderFinalizeTable();
+  }
 }
