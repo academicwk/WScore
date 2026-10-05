@@ -80,6 +80,9 @@ const ACTION_ROLES = {
   getHomeroomStudentReportData: ["HOMEROOM_TEACHER"],
   generateHomeroomStudentReport: ["HOMEROOM_TEACHER"],
   generateHomeroomClassReport: ["HOMEROOM_TEACHER"],
+  // ปถ.12 (ครูประจำชั้นอนุบาล อ.1-อ.3): บันทึกคะแนน 4 ด้าน + ความคิดเห็นครูประจำชั้น — 5 ต.ค. 2569
+  getPt12PageData: ["HOMEROOM_TEACHER"],
+  savePt12Results: ["HOMEROOM_TEACHER"],
   getPt06StudentReportData: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   generatePt06StudentReport: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   generatePt06ClassReport: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
@@ -293,6 +296,12 @@ function doPost(e) {
         break;
       case "generateHomeroomClassReport":
         result = handleGenerateHomeroomClassReport(body);
+        break;
+      case "getPt12PageData":
+        result = handleGetPt12PageData(body);
+        break;
+      case "savePt12Results":
+        result = handleSavePt12Results(body);
         break;
       case "getPt06StudentReportData":
         result = handleGetPt06StudentReportData(body);
@@ -529,6 +538,16 @@ function handleLogin(username, password) {
 
   const token = createSession(user.UserID);
 
+  // ระดับชั้นที่ครูประจำชั้นดูแล (KINDERGARTEN / PRIMARY / MIXED / "" = ไม่ได้ดูแลห้องใด) ใช้ให้ฝั่งหน้าเว็บเลือกชุดเมนูด้านข้างของครูประจำชั้น
+  let homeroomLevel = "";
+  if (userRoles.some((r) => r.roleType === "HOMEROOM_TEACHER")) {
+    try {
+      homeroomLevel = getHomeroomLevelForUser(user.UserID);
+    } catch (err) {
+      homeroomLevel = "";
+    }
+  }
+
   return {
     status: "success",
     data: {
@@ -539,6 +558,7 @@ function handleLogin(username, password) {
       position: user.Position,
       profileImageUrl: user.ProfileImageURL,
       roles: userRoles,
+      homeroomLevel: homeroomLevel,
     },
   };
 }
@@ -1177,6 +1197,11 @@ function handleGetDashboardData(body) {
           String(c.HomeroomTeacherUserID2) === String(userId))
     );
     const studentCount = myClasses.reduce((sum, c) => sum + (Number(c.StudentCount) || 0), 0);
+
+    // ครูประจำชั้นอนุบาลล้วน (ไม่มีห้องประถม): หน้าหลักแสดงสถานะการบันทึก ปถ.12 แทน เพราะอนุบาลไม่มีรายวิชา/การส่งผลการเรียนแบบประถม
+    if (myClasses.length > 0 && myClasses.every((c) => isKindergartenGradeLevel(c.GradeLevel))) {
+      return buildKindergartenHomeroomDashboard(myClasses, currentYearId);
+    }
 
     // นับรายวิชาที่ถูกมอบหมายให้สอนในห้องที่ตนเป็นครูประจำชั้น (รวมทุกห้องถ้าดูแลมากกว่า 1 ห้อง)
     // แยกว่าส่งผลการเรียนแล้วหรือยังต่อภาคเรียน (26 ก.ย. 2569 — แทนที่การ์ด "ข้อมูลไม่ครบ"/"เกรดเฉลี่ยห้อง" ที่ยังไม่เปิดใช้งานเดิม)
@@ -2716,6 +2741,339 @@ function handleSaveActivityResultsBulk(body) {
     invalidateSheetCache("ActivityResults");
 
     return { status: "success", message: "บันทึกผลกิจกรรมพัฒนาผู้เรียนสำเร็จ " + results.length + " รายการ" };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * ===== ปถ.12 : รายงานผลการพัฒนาคุณภาพผู้เรียนระดับอนุบาล (อ.1-อ.3) — 5 ต.ค. 2569 =====
+ * ครูประจำชั้นอนุบาลบันทึกคะแนน 4 ด้านของนักเรียนในห้องตนเอง พร้อมความคิดเห็นครูประจำชั้น (แยกรายภาคเรียน)
+ * ไม่เกี่ยวกับ TeachingAssignments (นายทะเบียนไม่ต้องมอบหมายการสอนใดๆ ให้ห้องอนุบาล) ไม่คำนวณคะแนนรวม/เฉลี่ย
+ *
+ * ต้องสร้างชีตใหม่ชื่อ "Pt12Results" เองใน Google Sheets ก่อนใช้งาน คอลัมน์เรียงตามนี้ (แถวที่ 1):
+ * Pt12ResultID | AcademicYearID | ClassID | StudentID | Semester | ThaiScore | MathScore | EnglishScore | ExperienceScore | TeacherComment | RecordedBy | RecordedAt
+ */
+const PT12_MAX_SCORES = { thai: 30, math: 30, english: 20, experience: 20 };
+const PT12_COMMENT_MAX_LENGTH = 1000;
+
+function isKindergartenGradeLevel(gradeLevel) {
+  return String(gradeLevel || "").trim().indexOf("อนุบาล") === 0;
+}
+
+/**
+ * ปีการศึกษาปัจจุบัน (IsCurrent = TRUE) ถ้าไม่มีปีใดถูกตั้งไว้ให้ fallback ไปใช้ปีล่าสุด (ตรรกะเดียวกับที่ใช้ทั่วระบบ)
+ * ใช้ handleGetAcademicYears() ที่แคชไว้ 5 นาทีและเรียงปีล่าสุดขึ้นก่อนอยู่แล้ว
+ */
+function getCurrentAcademicYearRow() {
+  const years = handleGetAcademicYears().data;
+  return (
+    years.find((y) => y.IsCurrent === true || String(y.IsCurrent).toUpperCase() === "TRUE") || years[0] || null
+  );
+}
+
+/**
+ * ห้องเรียนที่ userId เป็นครูประจำชั้น (คนที่ 1 หรือคนที่ 2) ในปีการศึกษาที่ระบุ
+ */
+function getHomeroomClassesOfUser(userId, academicYearId) {
+  return getCachedSheetData("Classes", 60).filter(
+    (c) =>
+      String(c.AcademicYearID) === String(academicYearId) &&
+      (String(c.HomeroomTeacherUserID) === String(userId) || String(c.HomeroomTeacherUserID2) === String(userId))
+  );
+}
+
+/**
+ * ระดับชั้นที่ครูประจำชั้นดูแลในปีการศึกษาปัจจุบัน: "KINDERGARTEN" (อนุบาลล้วน) / "PRIMARY" (ประถมล้วน) / "MIXED" (ทั้งสองแบบ) / "" (ไม่ได้ดูแลห้องใด)
+ */
+function getHomeroomLevelForUser(userId) {
+  const currentYear = getCurrentAcademicYearRow();
+  if (!currentYear) return "";
+  const myClasses = getHomeroomClassesOfUser(userId, currentYear.AcademicYearID);
+  if (myClasses.length === 0) return "";
+  const kindergartenCount = myClasses.filter((c) => isKindergartenGradeLevel(c.GradeLevel)).length;
+  if (kindergartenCount === 0) return "PRIMARY";
+  return kindergartenCount === myClasses.length ? "KINDERGARTEN" : "MIXED";
+}
+
+/**
+ * อ่านผลคะแนน ปถ.12 ของห้อง (หลายห้องได้) ในปีการศึกษาที่ระบุ ถ้ายังไม่มีชีต Pt12Results คืน [] (ไม่ทำให้หน้าอื่นพัง)
+ * ไม่แคชโดยตั้งใจ เพราะเป็นข้อมูลที่ครูเพิ่งบันทึกแล้วต้องเห็นตรงกับที่บันทึกทันที
+ */
+function getPt12Results(academicYearId, classIds) {
+  if (!SS.getSheetByName("Pt12Results")) return [];
+  const classIdSet = {};
+  classIds.forEach((id) => (classIdSet[String(id)] = true));
+  return getSheetData("Pt12Results").filter(
+    (r) => String(r.AcademicYearID) === String(academicYearId) && classIdSet[String(r.ClassID)] === true
+  );
+}
+
+function isPt12RowComplete(r) {
+  return ["ThaiScore", "MathScore", "EnglishScore", "ExperienceScore"].every(
+    (k) => r[k] !== "" && r[k] !== null && r[k] !== undefined
+  );
+}
+
+/**
+ * หน้าหลักของครูประจำชั้นอนุบาลล้วน: การ์ดสรุปจำนวนนักเรียน + จำนวนคนที่บันทึกคะแนน ปถ.12 ครบ 4 ด้านแล้วแยกรายภาคเรียน
+ */
+function buildKindergartenHomeroomDashboard(myClasses, currentYearId) {
+  const classIds = myClasses.map((c) => String(c.ClassID));
+  const totalStudents = getCachedSheetData("StudentEnrollments", 60).filter(
+    (e) => classIds.indexOf(String(e.ClassID)) !== -1
+  ).length;
+
+  const results = getPt12Results(currentYearId, classIds);
+  const completeCount = (semester) =>
+    results.filter((r) => Number(r.Semester) === semester && isPt12RowComplete(r)).length;
+
+  return {
+    status: "success",
+    data: {
+      cards: [
+        { icon: "fa-user-graduate", label: "จำนวนนักเรียน", value: totalStudents + " คน" },
+        {
+          icon: "fa-pen-to-square",
+          label: "บันทึกคะแนน ปถ.12 ครบ 4 ด้านแล้ว",
+          value:
+            "ภาคเรียนที่ 1: " +
+            completeCount(1) +
+            " / " +
+            totalStudents +
+            " คน<br>ภาคเรียนที่ 2: " +
+            completeCount(2) +
+            " / " +
+            totalStudents +
+            " คน",
+        },
+      ],
+      progress: [],
+      quickActions: [{ icon: "fa-file-pdf", label: "ออกรายงาน ปถ.12", href: "pt12-report.html" }],
+      subjects: [],
+    },
+  };
+}
+
+/**
+ * ตรวจสิทธิ์: ห้องนี้ต้องเป็นห้องอนุบาลที่ userId เป็นครูประจำชั้นในปีการศึกษาปัจจุบันเท่านั้น
+ * คืน { cls, currentYear, myKindergartenClasses } หรือ { error } ถ้าไม่ผ่าน
+ */
+function resolvePt12Class(userId, requestedClassId) {
+  const currentYear = getCurrentAcademicYearRow();
+  if (!currentYear) return { error: "ยังไม่ได้ตั้งค่าปีการศึกษาในระบบ" };
+
+  const myKindergartenClasses = getHomeroomClassesOfUser(userId, currentYear.AcademicYearID).filter((c) =>
+    isKindergartenGradeLevel(c.GradeLevel)
+  );
+  if (myKindergartenClasses.length === 0) {
+    return { currentYear: currentYear, myKindergartenClasses: [], cls: null };
+  }
+
+  const cls = requestedClassId
+    ? myKindergartenClasses.find((c) => String(c.ClassID) === String(requestedClassId))
+    : myKindergartenClasses[0];
+  if (!cls) return { error: "คุณไม่มีสิทธิ์เข้าถึงห้องเรียนนี้" };
+
+  return { currentYear: currentYear, myKindergartenClasses: myKindergartenClasses, cls: cls };
+}
+
+/**
+ * ดึงข้อมูลหน้า "ออกรายงาน ปถ.12": รายชื่อนักเรียนในห้อง + คะแนน/ความคิดเห็นที่เคยบันทึกไว้ของภาคเรียนที่เลือก
+ * body: { userId, classId (ไม่บังคับ), semester (1|2, ค่าเริ่มต้น 1) }
+ */
+function handleGetPt12PageData(body) {
+  const semester = Number(body.semester) === 2 ? 2 : 1;
+
+  const resolved = resolvePt12Class(body.userId, body.classId);
+  if (resolved.error) return { status: "error", message: resolved.error };
+
+  if (!resolved.cls) {
+    return {
+      status: "success",
+      data: { classOptions: [], selectedClassId: null, classLabel: "", semester: semester, maxScores: PT12_MAX_SCORES, students: [] },
+    };
+  }
+
+  const cls = resolved.cls;
+  const classId = String(cls.ClassID);
+
+  const allStudents = getCachedSheetData("Students", 120);
+  const enrollments = getCachedSheetData("StudentEnrollments", 60).filter((e) => String(e.ClassID) === classId);
+  const savedByStudent = {};
+  getPt12Results(resolved.currentYear.AcademicYearID, [classId])
+    .filter((r) => Number(r.Semester) === semester)
+    .forEach((r) => (savedByStudent[String(r.StudentID)] = r));
+
+  const students = enrollments
+    .map((e) => {
+      const st = allStudents.find((s) => String(s.StudentID) === String(e.StudentID));
+      if (!st) return null;
+      const saved = savedByStudent[String(e.StudentID)] || {};
+      return {
+        studentId: st.StudentID,
+        studentNumber: e.StudentNumber,
+        fullName: (st.PrefixName || "") + (st.FirstName || "") + " " + (st.LastName || ""),
+        thai: saved.ThaiScore === undefined ? "" : saved.ThaiScore,
+        math: saved.MathScore === undefined ? "" : saved.MathScore,
+        english: saved.EnglishScore === undefined ? "" : saved.EnglishScore,
+        experience: saved.ExperienceScore === undefined ? "" : saved.ExperienceScore,
+        comment: saved.TeacherComment === undefined ? "" : String(saved.TeacherComment),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Number(a.studentNumber) - Number(b.studentNumber));
+
+  return {
+    status: "success",
+    data: {
+      academicYearLabel: resolved.currentYear.Year,
+      classOptions: resolved.myKindergartenClasses.map((c) => ({
+        classId: c.ClassID,
+        label: c.GradeLevel + "/" + c.RoomNumber,
+      })),
+      selectedClassId: cls.ClassID,
+      classLabel: cls.GradeLevel + "/" + cls.RoomNumber,
+      semester: semester,
+      maxScores: PT12_MAX_SCORES,
+      students: students,
+    },
+  };
+}
+
+/**
+ * บันทึกคะแนน 4 ด้าน + ความคิดเห็นครูประจำชั้นของนักเรียนทั้งห้องพร้อมกัน (upsert ด้วย ปี+ห้อง+นักเรียน+ภาคเรียน)
+ * body: { userId, classId, semester, results: [{ studentId, thai, math, english, experience, comment }] }
+ * ช่องคะแนนเว้นว่างได้ (= ยังไม่บันทึก) แต่ถ้ากรอกต้องเป็นตัวเลข 0 ถึงคะแนนเต็มของด้านนั้น
+ */
+function handleSavePt12Results(body) {
+  const semester = Number(body.semester);
+  const results = body.results;
+
+  if ((semester !== 1 && semester !== 2) || !body.classId || !Array.isArray(results) || results.length === 0) {
+    return { status: "error", message: "ข้อมูลไม่ครบถ้วน" };
+  }
+
+  const resolved = resolvePt12Class(body.userId, body.classId);
+  if (resolved.error) return { status: "error", message: resolved.error };
+  if (!resolved.cls) {
+    return { status: "error", message: "คุณไม่ได้เป็นครูประจำชั้นอนุบาลห้องใดในปีการศึกษาปัจจุบัน" };
+  }
+
+  const classId = String(resolved.cls.ClassID);
+  const academicYearId = resolved.currentYear.AcademicYearID;
+
+  const enrolledStudentIds = {};
+  getCachedSheetData("StudentEnrollments", 60)
+    .filter((e) => String(e.ClassID) === classId)
+    .forEach((e) => (enrolledStudentIds[String(e.StudentID)] = e.StudentNumber));
+
+  const fields = [
+    { key: "thai", label: "ภาษาไทย", col: "ThaiScore", max: PT12_MAX_SCORES.thai },
+    { key: "math", label: "คณิตศาสตร์", col: "MathScore", max: PT12_MAX_SCORES.math },
+    { key: "english", label: "ภาษาอังกฤษ", col: "EnglishScore", max: PT12_MAX_SCORES.english },
+    { key: "experience", label: "เสริมประสบการณ์", col: "ExperienceScore", max: PT12_MAX_SCORES.experience },
+  ];
+
+  // ตรวจสอบข้อมูลทุกแถวก่อนเริ่มเขียน (ถ้ามีแถวใดไม่ผ่าน จะไม่บันทึกอะไรเลย)
+  const cleaned = [];
+  for (let i = 0; i < results.length; i++) {
+    const item = results[i] || {};
+    const sid = String(item.studentId);
+    if (!enrolledStudentIds.hasOwnProperty(sid)) {
+      return { status: "error", message: "พบนักเรียนที่ไม่ได้อยู่ในห้องเรียนนี้ กรุณารีเฟรชหน้าแล้วลองใหม่" };
+    }
+    const numberLabel = "เลขที่ " + enrolledStudentIds[sid];
+
+    const row = { studentId: sid, comment: String(item.comment === undefined || item.comment === null ? "" : item.comment).trim() };
+    if (row.comment.length > PT12_COMMENT_MAX_LENGTH) {
+      return { status: "error", message: numberLabel + ": ความคิดเห็นยาวเกิน " + PT12_COMMENT_MAX_LENGTH + " ตัวอักษร" };
+    }
+
+    for (let f = 0; f < fields.length; f++) {
+      const field = fields[f];
+      const raw = item[field.key];
+      if (raw === "" || raw === null || raw === undefined) {
+        row[field.col] = "";
+        continue;
+      }
+      const num = Number(raw);
+      if (isNaN(num) || num < 0 || num > field.max) {
+        return {
+          status: "error",
+          message: numberLabel + ": คะแนน" + field.label + " ต้องเป็นตัวเลข 0 ถึง " + field.max,
+        };
+      }
+      row[field.col] = Math.round(num * 100) / 100;
+    }
+    cleaned.push(row);
+  }
+
+  const lock = LockService.getScriptLock();
+  const gotLock = lock.tryLock(30000);
+  if (!gotLock) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
+  }
+
+  try {
+    const sheet = SS.getSheetByName("Pt12Results");
+    if (!sheet) {
+      return { status: "error", message: "ไม่พบชีต Pt12Results กรุณาติดต่อผู้ดูแลระบบให้สร้างชีตนี้ก่อนใช้งาน" };
+    }
+
+    const range = sheet.getDataRange();
+    const data = range.getValues();
+    const headers = data[0];
+    const colIndex = {};
+    headers.forEach((h, i) => (colIndex[h] = i));
+
+    const now = new Date();
+    const rowIndexByStudent = {};
+    let maxNum = 0;
+    for (let r = 1; r < data.length; r++) {
+      const idNum = parseInt(String(data[r][colIndex.Pt12ResultID]).replace(/[^0-9]/g, ""), 10);
+      if (!isNaN(idNum) && idNum > maxNum) maxNum = idNum;
+
+      if (
+        String(data[r][colIndex.AcademicYearID]) === String(academicYearId) &&
+        String(data[r][colIndex.ClassID]) === classId &&
+        Number(data[r][colIndex.Semester]) === semester
+      ) {
+        rowIndexByStudent[String(data[r][colIndex.StudentID])] = r;
+      }
+    }
+
+    const rowsToAppend = [];
+    cleaned.forEach((row) => {
+      if (rowIndexByStudent.hasOwnProperty(row.studentId)) {
+        const r = rowIndexByStudent[row.studentId];
+        fields.forEach((f) => (data[r][colIndex[f.col]] = row[f.col]));
+        data[r][colIndex.TeacherComment] = row.comment;
+        data[r][colIndex.RecordedBy] = body.userId;
+        data[r][colIndex.RecordedAt] = now;
+      } else {
+        maxNum += 1;
+        const newRow = new Array(headers.length).fill("");
+        newRow[colIndex.Pt12ResultID] = "P12" + String(maxNum).padStart(6, "0");
+        newRow[colIndex.AcademicYearID] = academicYearId;
+        newRow[colIndex.ClassID] = classId;
+        newRow[colIndex.StudentID] = row.studentId;
+        newRow[colIndex.Semester] = semester;
+        fields.forEach((f) => (newRow[colIndex[f.col]] = row[f.col]));
+        newRow[colIndex.TeacherComment] = row.comment;
+        newRow[colIndex.RecordedBy] = body.userId;
+        newRow[colIndex.RecordedAt] = now;
+        rowsToAppend.push(newRow);
+      }
+    });
+
+    range.setValues(data);
+    if (rowsToAppend.length > 0) {
+      const lastRow = sheet.getLastRow();
+      sheet.getRange(lastRow + 1, 1, rowsToAppend.length, headers.length).setValues(rowsToAppend);
+    }
+
+    return { status: "success", message: "บันทึกคะแนน ปถ.12 ภาคเรียนที่ " + semester + " สำเร็จ " + cleaned.length + " คน" };
   } finally {
     lock.releaseLock();
   }
