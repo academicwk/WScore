@@ -19,10 +19,13 @@
     (roles[0] && roles[0].roleType) ||
     "";
 
+  let gradingCountdownTimer = null;
+
   document.addEventListener("DOMContentLoaded", function () {
     renderHeader();
     renderSidebar();
     bindEvents();
+    initGradingCountdown();
   });
 
   function renderHeader() {
@@ -52,6 +55,10 @@
           <span class="hidden sm:inline text-wsecondary font-bold text-lg">ระบบบริหารจัดการวัดและประเมินผลการเรียนรู้<br>โรงเรียนเทศบาลวัดโขดทิมทาราม</span>
         </div>
         <div class="flex items-center gap-2 sm:gap-4">
+          <div id="gradingCountdown" class="hidden items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 whitespace-nowrap">
+            <i class="fa-solid fa-clock"></i>
+            <span id="gradingCountdownText">-</span>
+          </div>
           ${roleSwitcher}
           <span class="hidden sm:inline text-sm text-gray-600">
             <i class="fa-solid fa-user-circle mr-1"></i>${userData.fullName || userData.username}
@@ -70,7 +77,11 @@
 
     const items = MENU_CONFIG.filter((item) => item.roles.includes(currentRole));
 
-    const homeLink = `
+    // บทบาทผู้อำนวยการสถานศึกษา: ไม่ต้องมีเมนู "หน้าหลัก" มีเมนูเดียวคือ "รายงานสรุปผู้บริหาร" (27 ก.ย. 2569)
+    const homeLink =
+      currentRole === "DIRECTOR"
+        ? ""
+        : `
       <a href="dashboard.html" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
         currentPage === "dashboard.html"
           ? "bg-wprimary-light text-wprimary"
@@ -80,18 +91,43 @@
         <span>หน้าหลัก</span>
       </a>`;
 
-    const menuLinks = items
-      .map(
-        (item) => `
+    // เมนูที่ไม่มี field "group" (roles อื่นที่มีเมนูน้อยอยู่แล้ว) แสดงแบบเดิม ไม่จัดกลุ่ม
+    const linkHtml = (item) => `
       <a href="${item.href}" class="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
-          currentPage === item.href
-            ? "bg-wprimary-light text-wprimary"
-            : "text-gray-600 hover:bg-gray-100"
-        }">
+        currentPage === item.href
+          ? "bg-wprimary-light text-wprimary"
+          : "text-gray-600 hover:bg-gray-100"
+      }">
         <i class="fa-solid ${item.icon} w-5 text-center"></i>
         <span>${item.label}</span>
-      </a>`
-      )
+      </a>`;
+
+    const ungroupedItems = items.filter((item) => !item.group);
+    const menuLinks = ungroupedItems.map(linkHtml).join("");
+
+    // เมนูที่มี field "group" (เช่น ฝั่งนายทะเบียน) จัดเป็นกลุ่มพับ/กางได้ ลดความรกของเมนูที่มีจำนวนมาก (27 ก.ย. 2569)
+    // เรียงลำดับกลุ่มตามลำดับที่กลุ่มปรากฏครั้งแรกใน MENU_CONFIG กลุ่มที่มีหน้าปัจจุบันอยู่จะกางไว้ให้อัตโนมัติ กลุ่มอื่นพับไว้ก่อน
+    const groupNames = [];
+    items.forEach((item) => {
+      if (item.group && groupNames.indexOf(item.group) === -1) groupNames.push(item.group);
+    });
+
+    const groupedHtml = groupNames
+      .map((groupName, idx) => {
+        const groupItems = items.filter((item) => item.group === groupName);
+        const isActiveGroup = groupItems.some((item) => item.href === currentPage);
+        const groupId = "sidebarGroup" + idx;
+        return `
+        <div class="pt-1">
+          <button type="button" class="sidebar-group-toggle w-full flex items-center justify-between gap-2 px-4 py-2 text-xs font-semibold text-gray-400 uppercase tracking-wide hover:text-gray-600" data-target="${groupId}">
+            <span>${groupName}</span>
+            <i class="fa-solid fa-chevron-down text-[10px] transition-transform ${isActiveGroup ? "" : "-rotate-90"}"></i>
+          </button>
+          <div id="${groupId}" class="space-y-1 ${isActiveGroup ? "" : "hidden"}">
+            ${groupItems.map(linkHtml).join("")}
+          </div>
+        </div>`;
+      })
       .join("");
 
     document.getElementById("app-sidebar").innerHTML = `
@@ -100,9 +136,18 @@
         <nav class="p-3 space-y-1">
           ${homeLink}
           ${menuLinks}
+          ${groupedHtml}
         </nav>
       </aside>
     `;
+
+    // ผูก event เปิด/ปิดกลุ่มเมนู (ต้องผูกใหม่ทุกครั้งเพราะ innerHTML ถูกเขียนทับใหม่ด้านบน)
+    document.querySelectorAll(".sidebar-group-toggle").forEach((btn) => {
+      btn.addEventListener("click", function () {
+        document.getElementById(this.dataset.target).classList.toggle("hidden");
+        this.querySelector("i").classList.toggle("-rotate-90");
+      });
+    });
   }
 
   function bindEvents() {
@@ -117,12 +162,9 @@
         confirmButtonColor: "#d33",
       }).then((result) => {
         if (result.isConfirmed) {
-          callApi("logout", {}).finally(() => {
-            sessionStorage.removeItem("wscore_user");
-            sessionStorage.removeItem("wscore_token");
-            sessionStorage.removeItem("wscore_current_role");
-            window.location.href = "login.html";
-          });
+          sessionStorage.removeItem("wscore_user");
+          sessionStorage.removeItem("wscore_current_role");
+          window.location.href = "login.html";
         }
       });
     });
@@ -131,7 +173,8 @@
     if (roleSwitcher) {
       roleSwitcher.addEventListener("change", function () {
         sessionStorage.setItem("wscore_current_role", this.value);
-        window.location.href = "dashboard.html";
+        // ผู้อำนวยการสถานศึกษาไม่มีเมนู "หน้าหลัก" แล้ว สลับมาบทบาทนี้เมื่อไหร่ให้พาไปหน้า "รายงานสรุปผู้บริหาร" ตรงๆ เลย (27 ก.ย. 2569)
+        window.location.href = this.value === "DIRECTOR" ? "reports.html" : "dashboard.html";
       });
     }
 
@@ -150,5 +193,105 @@
 
     sidebarToggle.addEventListener("click", openSidebar);
     sidebarOverlay.addEventListener("click", closeSidebar);
+  }
+
+  // ===== ตัวนับถอยหลังช่วงเวลาบันทึกคะแนน (แสดงด้านซ้ายของตัวเลือกบทบาท ให้ทุกบทบาทเห็นเสมอ) =====
+
+  function initGradingCountdown() {
+    fetchGradingPeriodStatus();
+    // ดึงสถานะใหม่เป็นระยะ เผื่อนายทะเบียนเปลี่ยนช่วงเวลาระหว่างที่หน้านี้เปิดค้างไว้
+    setInterval(fetchGradingPeriodStatus, 5 * 60 * 1000);
+  }
+
+  async function fetchGradingPeriodStatus() {
+    try {
+      const result = await callApi("getGradingPeriodStatus");
+      if (result && result.status === "success") {
+        applyGradingPeriodStatus(result.data);
+      }
+    } catch (err) {
+      // เงียบไว้ ไม่ให้กระทบการใช้งานหลักถ้าดึงสถานะไม่สำเร็จ (เช่น เน็ตหลุดชั่วคราว)
+    }
+  }
+
+  function applyGradingPeriodStatus(data) {
+    if (gradingCountdownTimer) {
+      clearInterval(gradingCountdownTimer);
+      gradingCountdownTimer = null;
+    }
+
+    const el = document.getElementById("gradingCountdown");
+    const textEl = document.getElementById("gradingCountdownText");
+    if (!el || !textEl) return;
+
+    const periods = data.periods || [];
+
+    // 1) ถูก "บังคับเปิด" แบบไม่จำกัดเวลา (ปุ่มเปิด/ปิด) -> ไม่ต้องนับถอยหลัง โชว์ข้อความเปิดไม่จำกัดเวลาแทน
+    const manualOpenPeriod = periods.find((p) => p.manualStatus === "OPEN");
+    if (manualOpenPeriod) {
+      textEl.textContent = `ภาคเรียนที่ ${manualOpenPeriod.semester} - เปิดไม่จำกัดเวลา`;
+      setCountdownStyle(el, "open");
+      return;
+    }
+
+    // 2) เปิดตามช่วงเวลาที่ตั้งไว้ปกติ (ไม่ได้ถูกบังคับเปิด) -> นับถอยหลัง real-time ถึงระดับวินาที
+    const openPeriod = periods
+      .filter((p) => p.isConfigured && p.isOpen && p.manualStatus !== "OPEN")
+      .sort((a, b) => new Date(a.endDateTime) - new Date(b.endDateTime))[0];
+
+    if (openPeriod) {
+      setCountdownStyle(el, "open");
+      const endMs = new Date(openPeriod.endDateTime).getTime();
+
+      const tick = () => {
+        const diff = endMs - Date.now();
+        if (diff <= 0) {
+          textEl.textContent = `ปิดบันทึกคะแนนภาคเรียนที่ ${openPeriod.semester} แล้ว`;
+          setCountdownStyle(el, "closed");
+          clearInterval(gradingCountdownTimer);
+          gradingCountdownTimer = null;
+          return;
+        }
+        textEl.textContent = `ภาคเรียนที่ ${openPeriod.semester} - เหลือเวลาอีก ${formatCountdown(diff)}`;
+      };
+
+      tick();
+      gradingCountdownTimer = setInterval(tick, 1000);
+      return;
+    }
+
+    // 3) ถูก "บังคับปิด" ทันที หรือหมดเวลาตามช่วงที่ตั้งไว้แล้ว -> โชว์ข้อความปิด
+    const closedPeriod = periods.find((p) => p.manualStatus === "CLOSED" || (p.isConfigured && !p.isOpen));
+    if (closedPeriod) {
+      textEl.textContent = `ปิดบันทึกคะแนนภาคเรียนที่ ${closedPeriod.semester}`;
+      setCountdownStyle(el, "closed");
+      return;
+    }
+
+    // ไม่มีภาคเรียนใดถูกตั้งค่าเวลาไว้เลย -> ไม่ต้องรบกวนสายตา ซ่อนตัวนับถอยหลังไปเลย
+    el.classList.remove("flex");
+    el.classList.add("hidden");
+  }
+
+  function setCountdownStyle(el, state) {
+    el.classList.remove("hidden");
+    el.classList.add("flex");
+    el.classList.remove(
+      "border-gray-200", "bg-gray-50", "text-gray-500",
+      "border-wprimary/30", "bg-wprimary-light", "text-wprimary",
+      "border-red-200", "bg-red-50", "text-red-600"
+    );
+    // ตัวนับถอยหลังแสดงเป็นสีแดงเสมอ ทั้งตอนกำลังนับถอยหลัง (open) และตอนปิดไปแล้ว (closed)
+    el.classList.add("border-red-200", "bg-red-50", "text-red-600");
+  }
+
+  function formatCountdown(diffMs) {
+    const d = Math.floor(diffMs / 86400000);
+    const h = Math.floor((diffMs % 86400000) / 3600000);
+    const m = Math.floor((diffMs % 3600000) / 60000);
+    const s = Math.floor((diffMs % 60000) / 1000);
+
+    // แสดงครบทุกหน่วยเสมอ (วัน-ชั่วโมง-นาที-วินาที) นับถอยหลังแบบ real-time ถึงระดับวินาที
+    return `${d} วัน ${h} ชั่วโมง ${m} นาที ${s} วินาที`;
   }
 })();

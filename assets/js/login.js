@@ -51,6 +51,11 @@ document.addEventListener("DOMContentLoaded", function () {
         sessionStorage.setItem("wscore_user", JSON.stringify(result.data));
         sessionStorage.setItem("wscore_token", result.data.token);
 
+        // บทบาทแรกของผู้ใช้งาน (ใช้หลักการเดียวกับ layout.js ตอนยังไม่เคยเลือกบทบาทในเซสชันนี้)
+        // ผู้อำนวยการสถานศึกษา: พาเข้าหน้า "รายงานสรุปผู้บริหาร" ตรงๆ เลย เพราะไม่มีเมนู "หน้าหลัก" ให้กลับไปแล้ว (27 ก.ย. 2569)
+        const roles = result.data.roles || [];
+        const landingPage = roles[0] && roles[0].roleType === "DIRECTOR" ? "reports.html" : "dashboard.html";
+
         Swal.fire({
           icon: "success",
           title: "เข้าสู่ระบบสำเร็จ",
@@ -58,7 +63,7 @@ document.addEventListener("DOMContentLoaded", function () {
           timer: 1200,
           showConfirmButton: false,
         }).then(() => {
-          window.location.href = "dashboard.html";
+          window.location.href = landingPage;
         });
       } else {
         Swal.fire({
