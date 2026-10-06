@@ -147,6 +147,12 @@ function renderFilters() {
   document.getElementById("semesterFilter").value = String(pt12Data.semester);
 }
 
+// นักเรียนที่ไม่ได้ "กำลังศึกษา" ถูกล็อกการบันทึก (แสดงข้อมูลได้ตามเดิม)
+function isStudentLocked(studentId) {
+  const st = pt12Data.students.find((s) => String(s.studentId) === String(studentId));
+  return !!st && st.isActive === false;
+}
+
 function commentFilledCount(studentId) {
   const c = pt12Comments[studentId] || {};
   return PT12_COMMENT_FIELDS.filter((f) => String(c[f.key] || "").trim() !== "").length;
@@ -154,7 +160,7 @@ function commentFilledCount(studentId) {
 
 function commentButtonInner(studentId) {
   const n = commentFilledCount(studentId);
-  if (!pt12Data.isEditable) return `<i class="fa-solid fa-comment-dots mr-1"></i>ดูความเห็น${n > 0 ? " (" + n + "/4)" : ""}`;
+  if (!pt12Data.isEditable || isStudentLocked(studentId)) return `<i class="fa-solid fa-comment-dots mr-1"></i>ดูความเห็น${n > 0 ? " (" + n + "/4)" : ""}`;
   return `<i class="fa-solid fa-comment-dots mr-1"></i>${n > 0 ? "แก้ไขความเห็น (" + n + "/4)" : "เพิ่มความเห็น"}`;
 }
 
@@ -189,20 +195,25 @@ function renderPt12() {
   const rowsHtml = pt12Data.students
     .map((s) => {
       const sid = escapeHtml(s.studentId);
+      const rowEditable = editable && s.isActive !== false;
       const scoreCells = PT12_FIELDS.map(
         (f) => `
         <td class="px-1 py-1 text-center border-l-2 border-b-2 border-gray-400 ${scoreBgClass(s[f.key], max[f.key])}">
           <input type="number" inputmode="decimal" step="0.01" min="0" max="${max[f.key]}"
                  data-student="${sid}" data-field="${f.key}"
-                 value="${escapeHtml(s[f.key])}" ${editable ? "" : "disabled"}
-                 class="pt12-score w-20 text-center text-sm border border-gray-300 rounded-lg px-1 py-1 focus:outline-none focus:ring-2 focus:ring-wprimary/30 ${editable ? "" : "opacity-60 cursor-not-allowed"}">
+                 value="${escapeHtml(s[f.key])}" ${rowEditable ? "" : "disabled"}
+                 class="pt12-score w-20 text-center text-sm border border-gray-300 rounded-lg px-1 py-1 focus:outline-none focus:ring-2 focus:ring-wprimary/30 ${rowEditable ? "" : "opacity-60 cursor-not-allowed"}">
         </td>`
       ).join("");
 
       return `
       <tr class="border-b border-gray-100 align-top">
         <td class="px-3 py-3 text-center text-gray-600">${escapeHtml(s.studentNumber)}</td>
-        <td class="px-3 py-3 text-gray-700 whitespace-nowrap sticky left-0 bg-white">${escapeHtml(s.fullName)}</td>
+        <td class="px-3 py-3 text-gray-700 whitespace-nowrap sticky left-0 bg-white">${escapeHtml(s.fullName)}${
+          s.isActive === false
+            ? `<span class="ml-2 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">${escapeHtml(s.studentStatus || "ไม่ได้กำลังศึกษา")}</span>`
+            : ""
+        }</td>
         ${scoreCells}
         <td class="px-2 py-2 text-center whitespace-nowrap">
           <button type="button" data-comment-student="${sid}"
@@ -378,7 +389,7 @@ function pasteScores(startEl, text) {
       const f = PT12_FIELDS[startCol + j];
       if (!f) return;
       const input = pt12Inputs[sid] && pt12Inputs[sid][f.key];
-      if (!input) return;
+      if (!input || input.disabled) return;
       let v = raw.trim().replace(/^(\d+),(\d+)$/, "$1.$2");
       if (v !== "" && isNaN(Number(v))) {
         nonNumeric++;
@@ -545,7 +556,7 @@ function updateProgressText() {
   refreshPdfButtons();
   const el = document.getElementById("progressText");
   if (!el) return;
-  const students = pt12Data.students;
+  const students = pt12Data.students.filter((s) => s.isActive !== false); // นับเฉพาะนักเรียนที่ "กำลังศึกษา"
   let complete = 0;
   students.forEach((s) => {
     const row = collectRow(s.studentId);
@@ -665,7 +676,7 @@ function openCommentModal(studentId) {
   const student = pt12Data.students.find((s) => String(s.studentId) === String(studentId));
   if (!student) return;
 
-  const editable = pt12Data.isEditable;
+  const editable = pt12Data.isEditable && student.isActive !== false;
   pt12ModalStudentId = studentId;
   document.getElementById("commentModalTitle").textContent = `เลขที่ ${student.studentNumber} ${student.fullName}`;
 
