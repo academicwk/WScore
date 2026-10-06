@@ -182,7 +182,7 @@ function renderPt12() {
 
   const headCells = PT12_FIELDS.map(
     (f) =>
-      `<th class="px-2 py-3 text-center whitespace-nowrap w-28">${f.label}<br><span class="text-[11px] font-normal normal-case text-gray-400">เต็ม ${max[f.key]}</span></th>`
+      `<th class="px-2 py-3 text-center whitespace-nowrap w-28 border-l-2 border-b-2 border-gray-400">${f.label}<br><span class="text-[11px] font-normal normal-case text-gray-400">เต็ม ${max[f.key]}</span></th>`
   ).join("");
 
   const rowsHtml = pt12Data.students
@@ -190,11 +190,11 @@ function renderPt12() {
       const sid = escapeHtml(s.studentId);
       const scoreCells = PT12_FIELDS.map(
         (f) => `
-        <td class="px-2 py-2 text-center">
+        <td class="px-1 py-1 text-center border-l-2 border-b-2 border-gray-400 ${scoreBgClass(s[f.key], max[f.key])}">
           <input type="number" inputmode="decimal" step="0.01" min="0" max="${max[f.key]}"
                  data-student="${sid}" data-field="${f.key}"
                  value="${escapeHtml(s[f.key])}" ${editable ? "" : "disabled"}
-                 class="pt12-score w-24 text-center text-sm border border-gray-300 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-wprimary/30 disabled:bg-gray-100 disabled:text-gray-500">
+                 class="pt12-score w-20 text-center text-sm border border-gray-300 rounded-lg px-1 py-1 focus:outline-none focus:ring-2 focus:ring-wprimary/30 ${editable ? "" : "opacity-60 cursor-not-allowed"}">
         </td>`
       ).join("");
 
@@ -221,6 +221,7 @@ function renderPt12() {
         <div class="flex items-center gap-3">
           ${editable ? "" : `<span class="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-50 text-amber-600">ดูอย่างเดียว</span>`}
           <span id="progressText" class="text-xs text-gray-500"></span>
+          ${editable ? `<span id="saveStatus" class="text-xs text-gray-500"></span>` : ""}
           ${
             editable
               ? `<button id="saveScoresBtn" type="button" disabled
@@ -255,28 +256,13 @@ function renderPt12() {
     (pt12Inputs[el.dataset.student] = pt12Inputs[el.dataset.student] || {})[el.dataset.field] = el;
   });
 
-  // พิมพ์คะแนน: ตรวจช่วงทันที (แดงถ้าเกินคะแนนเต็ม) และทำเครื่องหมาย "ยังไม่ได้บันทึก"
+  // พิมพ์คะแนน: ปรับให้อยู่ในช่วง 0 ถึงคะแนนเต็มทันที (เหมือนหน้าบันทึกคะแนนรายวิชา) + เปลี่ยนสีช่อง + ทำเครื่องหมาย "ยังไม่ได้บันทึก"
   body.addEventListener("input", function (e) {
     if (e.target.classList.contains("pt12-score")) {
-      markScoreValidity(e.target);
+      clampScore(e.target);
+      applyScoreColor(e.target);
       markDirty(e.target.dataset.student);
       updateProgressText();
-    }
-  });
-
-  // ออกจากช่อง: ถ้าคะแนนไม่ถูกต้องให้แจ้งเตือน (ยังไม่บันทึกจนกว่าจะกดปุ่ม "บันทึกคะแนน")
-  body.addEventListener("change", function (e) {
-    const el = e.target;
-    if (!el.classList.contains("pt12-score")) return;
-    markScoreValidity(el);
-    if (el.classList.contains("border-red-400")) {
-      const field = PT12_FIELDS.find((f) => f.key === el.dataset.field);
-      Swal.fire({
-        icon: "warning",
-        title: "คะแนนไม่ถูกต้อง",
-        text: `คะแนน${field ? field.label : ""}ต้องเป็นตัวเลข 0 ถึง ${el.max}`,
-        confirmButtonColor: "#268244",
-      });
     }
   });
 
@@ -331,8 +317,30 @@ function updateSaveButton() {
   const btn = document.getElementById("saveScoresBtn");
   if (!btn) return;
   const n = pt12Dirty.size;
+  if (pt12Pending > 0) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>กำลังบันทึก...';
+    return;
+  }
   btn.disabled = n === 0;
-  document.getElementById("saveScoresCount").textContent = n > 0 ? ` (${n})` : "";
+  btn.innerHTML = `<i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกคะแนน${n > 0 ? ` (${n})` : ""}`;
+}
+
+// ข้อความแจ้งผลการบันทึกข้างปุ่ม (เหมือนหน้าบันทึกคะแนนรายวิชา)
+function setSaveStatus(state, message) {
+  const el = document.getElementById("saveStatus");
+  if (!el) return;
+  if (state === "saving") {
+    el.className = "text-xs text-gray-500";
+    el.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังบันทึก...';
+  } else if (state === "success") {
+    const t = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    el.className = "text-xs text-green-600";
+    el.innerHTML = `<i class="fa-solid fa-circle-check mr-1"></i>บันทึกสำเร็จเมื่อ ${t} น.`;
+  } else {
+    el.className = "text-xs text-red-600";
+    el.innerHTML = `<i class="fa-solid fa-circle-xmark mr-1"></i>${escapeHtml(message || "บันทึกไม่สำเร็จ")}`;
+  }
 }
 
 // วางข้อมูลจากคลิปบอร์ด: แถว = นักเรียนเรียงตามเลขที่ต่อจากช่องที่วาง, คอลัมน์ = ภาษาไทย > คณิต > อังกฤษ > เสริมประสบการณ์
@@ -366,8 +374,8 @@ function pasteScores(startEl, text) {
         return;
       }
       input.value = v;
-      markScoreValidity(input);
-      if (input.classList.contains("border-red-400")) outOfRange++;
+      if (clampScore(input)) outOfRange++;
+      applyScoreColor(input);
       touched = true;
       filled++;
     });
@@ -377,7 +385,7 @@ function pasteScores(startEl, text) {
   updateProgressText();
 
   const notes = [];
-  if (outOfRange) notes.push(`${outOfRange} ช่องมีคะแนนเกินช่วง (แสดงสีแดง) ต้องแก้ก่อนบันทึก`);
+  if (outOfRange) notes.push(`ปรับ ${outOfRange} ช่องที่เกินช่วงให้อยู่ในช่วง 0 ถึงคะแนนเต็ม`);
   if (nonNumeric) notes.push(`ข้าม ${nonNumeric} ช่องที่ไม่ใช่ตัวเลข`);
   if (extraRows) notes.push(`ข้าม ${extraRows} แถวที่เกินจำนวนนักเรียน`);
   if (notes.length) {
@@ -394,18 +402,6 @@ function pasteScores(startEl, text) {
 async function saveDirtyScores() {
   if (!pt12Data || !pt12Data.isEditable || pt12Dirty.size === 0) return;
 
-  const bad = document.querySelectorAll("#pt12Body .pt12-score.border-red-400");
-  if (bad.length > 0) {
-    await Swal.fire({
-      icon: "warning",
-      title: "มีคะแนนที่ไม่ถูกต้อง",
-      text: `พบ ${bad.length} ช่อง (สีแดง) กรุณาแก้ไขให้อยู่ในช่วงคะแนนที่กำหนดก่อนบันทึก`,
-      confirmButtonColor: "#268244",
-    });
-    bad[0].focus();
-    return;
-  }
-
   const count = pt12Dirty.size;
   const result = await saveRows(Array.from(pt12Dirty));
   if (result.ok) {
@@ -413,12 +409,30 @@ async function saveDirtyScores() {
   }
 }
 
-function markScoreValidity(el) {
-  const v = el.value;
-  const bad = v !== "" && (isNaN(Number(v)) || Number(v) < 0 || Number(v) > Number(el.max));
-  el.classList.toggle("border-red-400", bad);
-  el.classList.toggle("bg-red-50", bad);
-  el.classList.toggle("border-gray-300", !bad);
+// สีช่องกรอกคะแนน (เหมือนระบบอื่น): ยังไม่กรอก = เหลืองอ่อน, กรอกแล้วต่ำกว่า 50% ของคะแนนเต็ม = แดงอ่อน, ตั้งแต่ 50% ขึ้นไป = เขียวอ่อน
+function scoreBgClass(val, max) {
+  if (val === undefined || val === null || val === "" || isNaN(Number(val))) return "bg-yellow-200";
+  return Number(val) < Number(max) / 2 ? "bg-red-200" : "bg-green-200";
+}
+
+function applyScoreColor(el) {
+  const cell = el.closest("td");
+  if (!cell) return;
+  cell.classList.remove("bg-yellow-200", "bg-green-200", "bg-red-200");
+  cell.classList.add(scoreBgClass(el.value, el.max));
+}
+
+// ปรับค่าให้อยู่ในช่วง 0..คะแนนเต็ม คืน true ถ้ามีการปรับ
+function clampScore(el) {
+  if (el.value === "") return false;
+  const max = Number(el.max);
+  let num = Number(el.value);
+  if (isNaN(num)) return false;
+  if (num > max) num = max;
+  else if (num < 0) num = 0;
+  else return false;
+  el.value = num;
+  return true;
 }
 
 // ค่าของนักเรียน 1 คน ณ ตอนนี้ (คะแนนจากช่องกรอก + ความเห็นจาก pt12Comments)
@@ -484,6 +498,8 @@ function saveRows(studentIds) {
 
   pt12Pending++;
   ids.forEach((id) => setRowStatus(id, "saving"));
+  setSaveStatus("saving");
+  updateSaveButton();
 
   const task = pt12SaveChain.then(async () => {
     // ผู้ใช้เปลี่ยนห้อง/ปี/ภาคเรียนไปแล้วระหว่างรอคิว -> ข้ามคำขอเก่า (ห้ามส่งค่าไปผิดห้อง)
@@ -540,6 +556,7 @@ function saveRows(studentIds) {
   return task.then((r) => {
     pt12Pending--;
     updateSaveButton();
+    if (r.message !== "ข้ามคำขอเก่า") setSaveStatus(r.ok ? "success" : "error", r.ok ? "" : r.message);
     if (!r.ok && r.message && r.message !== "ข้ามคำขอเก่า") {
       Swal.fire({ icon: "error", title: "บันทึกไม่สำเร็จ", text: r.message, confirmButtonColor: "#268244" });
     }
