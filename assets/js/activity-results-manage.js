@@ -94,16 +94,16 @@ function renderMatrix(data) {
         <td class="px-3 py-2 text-center">
           <input type="checkbox" class="activity-checkbox w-4 h-4 accent-wprimary"
                  data-student-id="${st.studentId}" data-class-id="${st.classId}" data-subject-id="${act.subjectId}"
-                 ${checked ? "checked" : ""}>
+                 ${checked ? "checked" : ""} ${st.isActive === false ? "disabled" : ""}>
         </td>`;
         })
         .join("");
 
       return `
       ${classDividerHtml}
-      <tr class="border-b border-gray-100">
+      <tr class="border-b border-gray-100 ${st.isActive === false ? "bg-gray-50 text-gray-400" : ""}">
         <td class="px-4 py-2 text-center text-gray-500">${st.studentNumber}</td>
-        <td class="px-4 py-2 font-medium text-wsecondary whitespace-nowrap">${st.fullName}</td>
+        <td class="px-4 py-2 font-medium text-wsecondary whitespace-nowrap">${st.fullName}${st.isActive === false ? `<span class="ml-2 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">${String(st.studentStatus || "ไม่ได้กำลังศึกษา").replace(/[<>&"]/g, "")}</span>` : ""}</td>
         <td class="px-3 py-2 text-center text-gray-500 whitespace-nowrap">${st.className}</td>
         ${cellsHtml}
       </tr>`;
@@ -131,7 +131,8 @@ function renderMatrix(data) {
 }
 
 async function handleSaveAll() {
-  const checkboxes = document.querySelectorAll(".activity-checkbox");
+  // นักเรียนที่ไม่ได้ "กำลังศึกษา" ถูกล็อก (checkbox disabled) ไม่ส่งไปบันทึก
+  const checkboxes = document.querySelectorAll(".activity-checkbox:not(:disabled)");
   if (checkboxes.length === 0) return;
 
   const academicYearId = document.getElementById("yearFilter").value;
