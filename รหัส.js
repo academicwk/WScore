@@ -24,6 +24,12 @@ const PT05_REPORTS_FOLDER_ID = "1e_IJMSCT0y5d2iTzH9YyMXfkOXnNpL07";
 // เพราะระบบจะสร้างโฟลเดอร์ให้เองอัตโนมัติในการใช้งานครั้งแรก (ดูฟังก์ชัน getPt06ReportsFolderId() ด้านล่าง)
 const PT06_TEMPLATE_FILE_ID = "1Txwjtf81EzQVlt5Wx5DWU7e4A4mGBGsx8G6o-K1AxsM";
 
+// ===== ตั้งค่าสำหรับระบบรายงาน "ปถ.12" (อนุบาล) — 6 ต.ค. 2569 =====
+// PT12_TEMPLATE_FILE_ID = File ID ของไฟล์ Google Sheets ต้นแบบ ปถ.12 (แปลงจากไฟล์ .xlsx เทมเพลตที่ผู้ใช้ส่งมา มีชีตเดียวชื่อ "ปพ.6")
+// *** ต้องอัปโหลดไฟล์เทมเพลตขึ้น Google Drive แล้วเปิดด้วย Google Sheets (ไฟล์ > บันทึกเป็น Google ชีต) จากนั้นนำ File ID มาใส่แทนข้อความด้านล่าง ***
+// โฟลเดอร์เก็บ PDF ระบบสร้างให้เองครั้งแรก (ดู getPt12ReportsFolderId())
+const PT12_TEMPLATE_FILE_ID = "19uJFtFkphSSJoZ5rD6LREOx1liEzK8dKmCGB5UkLJVM";
+
 /**
  * Action ที่จำกัดให้ใช้ได้เฉพาะบางบทบาทเท่านั้น (นอกเหนือจากนี้ = ใช้ได้ทุกคนที่ login แล้ว)
  * อ้างอิงจาก MENU_CONFIG ฝั่งหน้าเว็บ: เมนูที่เห็นเฉพาะ REGISTRAR/ASSISTANT_REGISTRAR
@@ -83,6 +89,7 @@ const ACTION_ROLES = {
   // ปถ.12 (ครูประจำชั้นอนุบาล อ.1-อ.3): บันทึกคะแนน 4 ด้าน + ความคิดเห็นครูประจำชั้น — 5 ต.ค. 2569
   getPt12PageData: ["HOMEROOM_TEACHER"],
   savePt12Results: ["HOMEROOM_TEACHER"],
+  generatePt12StudentReport: ["HOMEROOM_TEACHER"],
   getPt06StudentReportData: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   generatePt06StudentReport: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   generatePt06ClassReport: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
@@ -302,6 +309,9 @@ function doPost(e) {
         break;
       case "savePt12Results":
         result = handleSavePt12Results(body);
+        break;
+      case "generatePt12StudentReport":
+        result = handleGeneratePt12StudentReport(body);
         break;
       case "getPt06StudentReportData":
         result = handleGetPt06StudentReportData(body);
@@ -3157,6 +3167,178 @@ function handleSavePt12Results(body) {
     return { status: "success", message: "บันทึกคะแนน ปถ.12 ภาคเรียนที่ " + semester + " สำเร็จ " + cleaned.length + " คน" };
   } finally {
     lock.releaseLock();
+  }
+}
+
+/**
+ * รายการที่ยังไม่ครบของนักเรียน 1 คนในภาคเรียนหนึ่ง (อ่านจากแถวที่บันทึกในชีต Pt12Results) คืน [] ถ้าครบทุกอย่าง
+ * ครบ = คะแนนครบ 4 ด้าน + ความเห็นครูประจำชั้นครบ 4 ด้าน (ไม่เป็นช่องว่าง)
+ */
+function getPt12MissingItems(row) {
+  const missing = [];
+  if (!row) return ["คะแนนและความเห็นทั้งหมด"];
+  [
+    ["ThaiScore", "คะแนนภาษาไทย"],
+    ["MathScore", "คะแนนคณิตศาสตร์"],
+    ["EnglishScore", "คะแนนภาษาอังกฤษ"],
+    ["ExperienceScore", "คะแนนเสริมประสบการณ์"],
+  ].forEach((p) => {
+    if (row[p[0]] === "" || row[p[0]] === null || row[p[0]] === undefined) missing.push(p[1]);
+  });
+  PT12_COMMENT_FIELDS.forEach((f) => {
+    if (String(row[f.col] === undefined || row[f.col] === null ? "" : row[f.col]).trim() === "") {
+      missing.push("ความเห็น" + f.label);
+    }
+  });
+  return missing;
+}
+
+/**
+ * คืนค่า Folder ID สำหรับเก็บ PDF รายงาน ปถ.12 — สร้างโฟลเดอร์ใหม่อัตโนมัติครั้งแรก แล้วจำ ID ไว้ใน Script Properties
+ */
+function getPt12ReportsFolderId() {
+  const props = PropertiesService.getScriptProperties();
+  const saved = props.getProperty("PT12_REPORTS_FOLDER_ID");
+  if (saved) {
+    try {
+      DriveApp.getFolderById(saved);
+      return saved;
+    } catch (err) {
+      // โฟลเดอร์เดิมถูกลบไปแล้ว สร้างใหม่แทนด้านล่าง
+    }
+  }
+  const folder = DriveApp.createFolder("W-Score รายงาน ปถ.12");
+  props.setProperty("PT12_REPORTS_FOLDER_ID", folder.getId());
+  return folder.getId();
+}
+
+/**
+ * กรอกข้อมูลนักเรียน 1 คนลงชีตเทมเพลต ปถ.12 ที่คัดลอกมาแล้ว (sheet = สำเนาของชีต "ปพ.6" ของไฟล์เทมเพลต ปถ.12)
+ * แผนที่เซลล์ของเทมเพลต (6 ต.ค. 2569):
+ *   B3 (merge B3:F3) = ชั้น/ปีการศึกษา (ต่อท้ายด้วยภาคเรียน), B4 (merge B4:F4) = ชื่อ/เลขประจำตัว/ห้อง/เลขที่
+ *   แถว 8-11 = ภาษาไทย/คณิตศาสตร์/ภาษาอังกฤษ/เสริมประสบการณ์ : D = เต็ม, E = ได้, F = หมายเหตุ (เว้นว่าง)
+ *   แถว 14-17 (merge A:F ต่อแถว) = ความเห็นครูประจำชั้น ร่างกาย/อารมณ์จิตใจ/สังคม/สติปัญญา
+ *   แถว 19-22 = ความเห็นของผู้ปกครอง (เว้นว่างให้เขียนเอง)
+ */
+function fillPt12Sheet(sheet, student, enrollment, cls, academicYear, semester, row) {
+  const gradeNumber = String(cls.GradeLevel).replace(/[^0-9]/g, "") || cls.GradeLevel;
+  sheet.getRange("B3").setValue("ชั้นอนุบาลปีที่ " + gradeNumber + "  ปีการศึกษา " + academicYear.Year + "  ภาคเรียนที่ " + semester);
+  sheet
+    .getRange("B4")
+    .setValue(
+      "ชื่อ   " +
+        (student.PrefixName || "") + (student.FirstName || "") + " " + (student.LastName || "") +
+        "     เลขประจำตัว   " + student.StudentID +
+        "     ห้อง   " + cls.RoomNumber +
+        "     เลขที่   " + enrollment.StudentNumber
+    );
+
+  const fmt = (v) => Math.round(Number(v) * 100) / 100;
+  sheet.getRange("D8:E11").setValues([
+    [PT12_MAX_SCORES.thai, fmt(row.ThaiScore)],
+    [PT12_MAX_SCORES.math, fmt(row.MathScore)],
+    [PT12_MAX_SCORES.english, fmt(row.EnglishScore)],
+    [PT12_MAX_SCORES.experience, fmt(row.ExperienceScore)],
+  ]);
+
+  // ความเห็น 4 ด้าน แถว 14-17: ใช้ป้ายชื่อตามเทมเพลต (ด้านอารมณ์จิตใจ) และเพิ่มความสูงแถวตามความยาวข้อความ (เซลล์ที่ merge ไม่ขยายอัตโนมัติ)
+  const labels = ["ด้านร่างกาย", "ด้านอารมณ์จิตใจ", "ด้านสังคม", "ด้านสติปัญญา"];
+  const keys = ["CommentPhysical", "CommentEmotional", "CommentSocial", "CommentIntellectual"];
+  let widthPx = 0;
+  for (let c = 1; c <= 6; c++) widthPx += sheet.getColumnWidth(c);
+  const THAI_COMBINING_MARKS = /[ัิ-ฺ็-๎]/g;
+  const fontPt = 16;
+  const lineHeight = 24;
+
+  labels.forEach((label, i) => {
+    const rowNum = 14 + i;
+    const text = label + " : " + String(row[keys[i]]).trim().replace(/\s*\n\s*/g, " ");
+    const cell = sheet.getRange(rowNum, 1);
+    cell.setValue(text);
+    cell.setWrap(true);
+    cell.setVerticalAlignment("middle");
+    const charCount = text.replace(THAI_COMBINING_MARKS, "").length;
+    const lines = Math.max(1, Math.ceil((charCount * fontPt * 0.62) / Math.max(widthPx - 12, 50)));
+    sheet.setRowHeight(rowNum, Math.max(lineHeight, lines * lineHeight));
+  });
+}
+
+/**
+ * ออกรายงาน ปถ.12 (PDF) รายบุคคล แยกตามภาคเรียน — เฉพาะนักเรียนที่บันทึกครบทุกอย่างแล้ว (คะแนน 4 ด้าน + ความเห็น 4 ด้าน)
+ * body: { userId, academicYearId, classId, studentId, semester }
+ * ครูประจำชั้นห้องนั้นเท่านั้น (ตรวจผ่าน resolvePt12Class) ปีการศึกษาที่ผ่านมาก็ออกรายงานได้ (ดูอย่างเดียว ไม่แก้ข้อมูล)
+ */
+function handleGeneratePt12StudentReport(body) {
+  const semester = Number(body.semester);
+  const studentId = body.studentId;
+  if (semester !== 1 && semester !== 2) return { status: "error", message: "ภาคเรียนไม่ถูกต้อง" };
+  if (!body.classId || !studentId) return { status: "error", message: "กรุณาเลือกห้องเรียนและนักเรียน" };
+
+  if (!PT12_TEMPLATE_FILE_ID || PT12_TEMPLATE_FILE_ID.indexOf("ใส่_") === 0) {
+    return { status: "error", message: "ระบบยังไม่ได้ตั้งค่าไฟล์เทมเพลต ปถ.12 กรุณาติดต่อผู้ดูแลระบบ" };
+  }
+
+  const resolved = resolvePt12Class(body.userId, body.classId, body.academicYearId);
+  if (resolved.error) return { status: "error", message: resolved.error };
+  if (!resolved.cls) return { status: "error", message: "ไม่พบห้องเรียน" };
+
+  const cls = resolved.cls;
+  const year = resolved.year;
+  const classId = String(cls.ClassID);
+
+  const enrollment = getCachedSheetData("StudentEnrollments", 60).find(
+    (e) => String(e.ClassID) === classId && String(e.StudentID) === String(studentId)
+  );
+  if (!enrollment) return { status: "error", message: "ไม่พบนักเรียนคนนี้ในห้องเรียนที่เลือก" };
+
+  const student = getCachedSheetData("Students", 120).find((s) => String(s.StudentID) === String(studentId));
+  if (!student) return { status: "error", message: "ไม่พบข้อมูลนักเรียน" };
+
+  const row = getPt12Results(year.AcademicYearID, [classId]).find(
+    (r) => String(r.StudentID) === String(studentId) && Number(r.Semester) === semester
+  );
+  const missing = getPt12MissingItems(row);
+  if (missing.length > 0) {
+    return { status: "error", message: "ข้อมูลยังไม่ครบ ไม่สามารถออกรายงานได้ ยังขาด: " + missing.join(", ") };
+  }
+
+  const fileName =
+    "ปถ12_" + studentId + "_" + student.FirstName + student.LastName +
+    "_อ." + String(cls.GradeLevel).replace(/[^0-9]/g, "") + "-" + cls.RoomNumber +
+    "_" + year.Year + "_ภาค" + semester;
+
+  const reportsFolder = DriveApp.getFolderById(getPt12ReportsFolderId());
+  const copyFile = DriveApp.getFileById(PT12_TEMPLATE_FILE_ID).makeCopy(fileName, reportsFolder);
+
+  try {
+    const reportSs = SpreadsheetApp.openById(copyFile.getId());
+    fillPt12Sheet(reportSs.getSheets()[0], student, enrollment, cls, year, semester, row);
+    SpreadsheetApp.flush();
+
+    const exportUrl =
+      "https://docs.google.com/spreadsheets/d/" +
+      copyFile.getId() +
+      "/export?format=pdf&size=A4&portrait=true&scale=4&top_margin=0.25&bottom_margin=0.25&left_margin=0.25&right_margin=0.25&horizontal_alignment=CENTER&vertical_alignment=TOP&sheetnames=false&printtitle=false&pagenumbers=false&gridlines=false&fzr=false";
+    const pdfResponse = UrlFetchApp.fetch(exportUrl, {
+      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+      muteHttpExceptions: true,
+    });
+    if (pdfResponse.getResponseCode() !== 200) {
+      return { status: "error", message: "ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง" };
+    }
+
+    const pdfBlob = pdfResponse.getBlob().setName(fileName + ".pdf");
+    const pdfFile = reportsFolder.createFile(pdfBlob);
+    return {
+      status: "success",
+      data: {
+        fileName: fileName + ".pdf",
+        driveUrl: pdfFile.getUrl(),
+        base64: Utilities.base64Encode(pdfBlob.getBytes()),
+      },
+    };
+  } finally {
+    copyFile.setTrashed(true);
   }
 }
 
