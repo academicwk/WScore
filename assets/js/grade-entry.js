@@ -315,9 +315,9 @@ function renderEntryTable() {
                  data-si="${si}" data-ci="${ci}"
                  data-student-id="${st.studentId}" data-component-id="${c.componentId}" data-sub-component-id="${c.subComponentId}"
                  value="${val === undefined ? "" : val}"
-                 oninput="onScoreInput(this)" ${isEntryLocked ? "disabled" : ""}
+                 oninput="onScoreInput(this)" ${isEntryLocked || st.isActive === false ? "disabled" : ""}
                  class="score-input w-16 text-center border border-gray-300 rounded-lg px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30 ${
-                   isEntryLocked ? "opacity-60 cursor-not-allowed" : ""
+                   isEntryLocked || st.isActive === false ? "opacity-60 cursor-not-allowed" : ""
                  }">
         </td>`;
         })
@@ -353,7 +353,7 @@ function renderEntryTable() {
       return `
     <tr class="${si % 2 === 0 ? "bg-sky-200" : "bg-slate-300"}" data-row-student="${st.studentId}">
       <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap border-b-2 border-gray-400">${st.studentNumber}</td>
-      <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-b-2 border-gray-400">${st.fullName}</td>
+      <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-b-2 border-gray-400">${st.fullName}${st.isActive === false ? `<span class="ml-2 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">${String(st.studentStatus || "ไม่ได้กำลังศึกษา").replace(/[<>&"]/g, "")}</span>` : ""}</td>
       ${allUnitsScoreHtml}
       ${cellsHtml}
       ${unitSummaryHtml}
@@ -487,7 +487,7 @@ function handleGridPaste(e) {
       const si = startSi + rOffset;
       const ci = startCi + cOffset;
       const cellInput = document.querySelector(`input[data-si="${si}"][data-ci="${ci}"]`);
-      if (cellInput) {
+      if (cellInput && !cellInput.disabled) {
         cellInput.value = cellText.trim();
         onScoreInput(cellInput);
       }
@@ -505,6 +505,7 @@ async function saveAllScores() {
   const scores = [];
 
   currentStudents.forEach((st) => {
+    if (st.isActive === false) return; // ไม่ได้ "กำลังศึกษา" ถูกล็อก ไม่ส่งไปบันทึก (ฝั่ง Server ปฏิเสธอยู่แล้ว)
     cols.forEach((c) => {
       const val = currentScores[scoreKey(st.studentId, c.componentId, c.subComponentId)];
       if (val !== undefined && val !== null && val !== "") {
