@@ -5,6 +5,7 @@
  *
  * คะแนน: พิมพ์/วางหลายแถวได้ (copy จาก Excel/Sheets) แล้วกดปุ่ม "บันทึกคะแนน" -> ส่งเฉพาะแถวที่แก้ไขในคำขอเดียว
  * ความเห็น: กดปุ่ม "บันทึก" ใน Modal -> บันทึกนักเรียนคนนั้นทันที
+ * ปุ่ม PDF รายแถว: กดได้เมื่อคะแนน 4 ด้าน + ความเห็น 4 ด้านครบ และบันทึกลงระบบแล้ว -> ออกรายงาน ปถ.12 รายบุคคล (แยกตามภาคเรียน)
  * ปีการศึกษาที่ผ่านมาดูได้อย่างเดียว แก้ไขได้เฉพาะปีการศึกษาปัจจุบัน
  */
 
@@ -210,6 +211,12 @@ function renderPt12() {
           </button>
         </td>
         <td class="px-2 py-2 text-center w-12"><span data-status="${sid}"></span></td>
+        <td class="px-2 py-2 text-center whitespace-nowrap">
+          <button type="button" data-pdf-student="${sid}" disabled
+                  class="text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-300 text-gray-400 cursor-not-allowed">
+            <i class="fa-solid fa-file-pdf mr-1"></i>PDF
+          </button>
+        </td>
       </tr>`;
     })
     .join("");
@@ -241,6 +248,7 @@ function renderPt12() {
               ${headCells}
               <th class="px-3 py-3 text-center whitespace-nowrap w-44">ความเห็นครูประจำชั้น</th>
               <th class="px-2 py-3 w-12"></th>
+              <th class="px-3 py-3 text-center whitespace-nowrap w-24">รายงาน</th>
             </tr>
           </thead>
           <tbody id="pt12Body">${rowsHtml}</tbody>
@@ -297,6 +305,8 @@ function renderPt12() {
     }
     const retry = e.target.closest("[data-retry-student]");
     if (retry) saveRows([retry.dataset.retryStudent]);
+    const pdf = e.target.closest("[data-pdf-student]");
+    if (pdf && !pdf.disabled) generatePdf(pdf.dataset.pdfStudent);
   });
 
   const saveBtn = document.getElementById("saveScoresBtn");
@@ -311,6 +321,7 @@ function markDirty(studentId) {
   pt12Version[sid] = (pt12Version[sid] || 0) + 1;
   setRowStatus(sid, "dirty");
   updateSaveButton();
+  refreshPdfButtons();
 }
 
 function updateSaveButton() {
@@ -448,7 +459,90 @@ function collectRow(studentId) {
   return row;
 }
 
+// รายการที่ยังไม่ครบของนักเรียน 1 คน (คะแนน 4 ด้าน + ความเห็น 4 ด้าน + ต้องบันทึกลงระบบแล้ว)
+function getPt12Missing(studentId) {
+  const sid = String(studentId);
+  const row = collectRow(sid);
+  const missing = [];
+  PT12_FIELDS.forEach((f) => {
+    if (row[f.key] === "") missing.push("คะแนน" + f.label);
+  });
+  PT12_COMMENT_FIELDS.forEach((f) => {
+    if (String(row[f.key] || "").trim() === "") missing.push("ความเห็น" + f.label);
+  });
+  if (missing.length === 0 && (pt12Dirty.has(sid) || pt12Failed.has(sid))) missing.push("ยังไม่ได้บันทึกลงระบบ");
+  return missing;
+}
+
+let pt12PdfBusy = new Set(); // นักเรียนที่กำลังสร้าง PDF
+
+// เปิด/ปิดปุ่ม PDF รายแถว: กดได้เมื่อข้อมูลครบทุกอย่างและบันทึกลงระบบแล้วเท่านั้น
+function refreshPdfButtons() {
+  if (!pt12Data) return;
+  pt12Data.students.forEach((s) => {
+    const btn = document.querySelector(`[data-pdf-student="${CSS.escape(String(s.studentId))}"]`);
+    if (!btn) return;
+    if (pt12PdfBusy.has(String(s.studentId))) return;
+    const missing = getPt12Missing(s.studentId);
+    const ready = missing.length === 0 && pt12Pending === 0;
+    btn.disabled = !ready;
+    btn.className = ready
+      ? "text-xs font-medium px-3 py-1.5 rounded-lg border border-red-500 text-red-600 hover:bg-red-50"
+      : "text-xs font-medium px-3 py-1.5 rounded-lg border border-gray-300 text-gray-400 cursor-not-allowed";
+    btn.title = ready ? "ออกรายงาน ปถ.12 (PDF)" : missing.length ? "ยังไม่ครบ: " + missing.join(", ") : "กำลังบันทึก...";
+  });
+}
+
+function downloadPdfFromBase64(base64, fileName) {
+  const byteChars = atob(base64);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+async function generatePdf(studentId) {
+  const sid = String(studentId);
+  if (pt12PdfBusy.has(sid) || getPt12Missing(sid).length > 0) return;
+
+  const btn = document.querySelector(`[data-pdf-student="${CSS.escape(sid)}"]`);
+  pt12PdfBusy.add(sid);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังสร้าง';
+  }
+
+  try {
+    const result = await callApi("generatePt12StudentReport", {
+      userId: pt12User.userId,
+      academicYearId: pt12Data.selectedYearId,
+      classId: pt12Data.selectedClassId,
+      semester: pt12Data.semester,
+      studentId: sid,
+    });
+    if (result.status === "success") {
+      downloadPdfFromBase64(result.data.base64, result.data.fileName);
+      Swal.fire({ icon: "success", title: "ออกรายงานสำเร็จ", text: result.data.fileName, confirmButtonColor: "#268244", timer: 1800, showConfirmButton: false });
+    } else {
+      Swal.fire({ icon: "error", title: "ออกรายงานไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+    }
+  } catch (err) {
+    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
+  } finally {
+    pt12PdfBusy.delete(sid);
+    if (btn) btn.innerHTML = '<i class="fa-solid fa-file-pdf mr-1"></i>PDF';
+    refreshPdfButtons();
+  }
+}
+
 function updateProgressText() {
+  refreshPdfButtons();
   const el = document.getElementById("progressText");
   if (!el) return;
   const students = pt12Data.students;
@@ -500,6 +594,7 @@ function saveRows(studentIds) {
   ids.forEach((id) => setRowStatus(id, "saving"));
   setSaveStatus("saving");
   updateSaveButton();
+  refreshPdfButtons();
 
   const task = pt12SaveChain.then(async () => {
     // ผู้ใช้เปลี่ยนห้อง/ปี/ภาคเรียนไปแล้วระหว่างรอคิว -> ข้ามคำขอเก่า (ห้ามส่งค่าไปผิดห้อง)
@@ -556,6 +651,7 @@ function saveRows(studentIds) {
   return task.then((r) => {
     pt12Pending--;
     updateSaveButton();
+    refreshPdfButtons();
     if (r.message !== "ข้ามคำขอเก่า") setSaveStatus(r.ok ? "success" : "error", r.ok ? "" : r.message);
     if (!r.ok && r.message && r.message !== "ข้ามคำขอเก่า") {
       Swal.fire({ icon: "error", title: "บันทึกไม่สำเร็จ", text: r.message, confirmButtonColor: "#268244" });
@@ -629,6 +725,7 @@ async function saveCommentModal() {
   PT12_COMMENT_FIELDS.forEach((f) => (pt12Comments[sid][f.key] = newValues[f.key]));
   const btn = document.querySelector(`[data-comment-student="${CSS.escape(String(sid))}"]`);
   if (btn) btn.innerHTML = commentButtonInner(sid);
+  refreshPdfButtons();
 
   const result = await saveRow(sid);
 
