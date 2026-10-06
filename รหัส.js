@@ -28,7 +28,7 @@ const PT06_TEMPLATE_FILE_ID = "1Txwjtf81EzQVlt5Wx5DWU7e4A4mGBGsx8G6o-K1AxsM";
 // PT12_TEMPLATE_FILE_ID = File ID ของไฟล์ Google Sheets ต้นแบบ ปถ.12 (แปลงจากไฟล์ .xlsx เทมเพลตที่ผู้ใช้ส่งมา มีชีตเดียวชื่อ "ปพ.6")
 // *** ต้องอัปโหลดไฟล์เทมเพลตขึ้น Google Drive แล้วเปิดด้วย Google Sheets (ไฟล์ > บันทึกเป็น Google ชีต) จากนั้นนำ File ID มาใส่แทนข้อความด้านล่าง ***
 // โฟลเดอร์เก็บ PDF ระบบสร้างให้เองครั้งแรก (ดู getPt12ReportsFolderId())
-const PT12_TEMPLATE_FILE_ID = "19uJFtFkphSSJoZ5rD6LREOx1liEzK8dKmCGB5UkLJVM";
+const PT12_TEMPLATE_FILE_ID = "ใส่_FILE_ID_เทมเพลต_ปถ12";
 
 /**
  * Action ที่จำกัดให้ใช้ได้เฉพาะบางบทบาทเท่านั้น (นอกเหนือจากนี้ = ใช้ได้ทุกคนที่ login แล้ว)
@@ -406,6 +406,35 @@ function getCachedSheetData(sheetName, ttlSeconds) {
 
 function invalidateSheetCache(sheetName) {
   CacheService.getScriptCache().remove("sheetcache_" + sheetName);
+}
+
+/**
+ * ===== สถานะนักเรียน (6 ต.ค. 2569) =====
+ * นักเรียนที่ Students.Status ไม่ใช่ "กำลังศึกษา" (เช่น ย้าย, จบการศึกษา, ลาออก) จะ:
+ *  1) ถูกล็อกการบันทึกผลทุกชนิด (คะแนนรายวิชา, ผลกิจกรรมพัฒนาผู้เรียน, ปถ.12) — ไม่แสดงในหน้ากรอกและฝั่ง Server ปฏิเสธถ้ายิง request ตรงเข้ามา
+ *  2) ไม่ถูกนับเป็นจำนวนนักเรียน (การ์ดสรุป, สถิติ, ความคืบหน้า, จำนวนนักเรียนในห้อง ฯลฯ)
+ * ข้อมูลที่เคยบันทึกไว้แล้วไม่ถูกลบ และเอกสารทางการศึกษา (ปถ.06 ฯลฯ) ยังออกให้นักเรียนเหล่านี้ได้ตามเดิม
+ * หน้าจัดนักเรียนเข้าห้อง (นายทะเบียน) ยังเห็นนักเรียนทุกสถานะ เพื่อให้จัดการได้
+ */
+const STUDENT_ACTIVE_STATUS = "กำลังศึกษา";
+
+function isActiveStudentRow(student) {
+  return !!student && String(student.Status === undefined || student.Status === null ? "" : student.Status).trim() === STUDENT_ACTIVE_STATUS;
+}
+
+// ชุดรหัสนักเรียนที่ "กำลังศึกษา" (อ่านจาก Students ที่แคชไว้ 120 วินาที — handleUpdateStudent ล้างแคชทันทีเมื่อเปลี่ยนสถานะ)
+function getActiveStudentIdSet() {
+  const set = {};
+  getCachedSheetData("Students", 120).forEach((st) => {
+    if (isActiveStudentRow(st)) set[String(st.StudentID)] = true;
+  });
+  return set;
+}
+
+// รายการจัดเข้าห้อง เฉพาะนักเรียนที่ "กำลังศึกษา" (ใช้กับการนับ/การบันทึกผลทุกจุด)
+function getActiveEnrollments() {
+  const active = getActiveStudentIdSet();
+  return getCachedSheetData("StudentEnrollments", 60).filter((e) => active[String(e.StudentID)] === true);
 }
 
 /**
@@ -969,6 +998,8 @@ function handleUpdateStudent(body) {
   ]]);
 
   invalidateSheetCache("Students");
+  // สถานะนักเรียนมีผลต่อจำนวนนักเรียนในห้องที่หน้าจัดการห้องเรียนแสดง (แคช classesPageData) ต้องล้างด้วยทันที
+  CacheService.getScriptCache().remove("classesPageData");
   return { status: "success", message: "แก้ไขข้อมูลนักเรียนเรียบร้อยแล้ว" };
 }
 
@@ -1077,7 +1108,7 @@ function handleGetDashboardData(body) {
     const subjects = handleGetSubjects().data;
     const allComponents = getCachedSheetData("GradeComponents", 120);
     const allSubComponents = getCachedSheetData("GradeSubComponents", 60);
-    const allEnrollments = getCachedSheetData("StudentEnrollments", 60);
+    const allEnrollments = getActiveEnrollments();
     // คะแนนและสถานะส่งผลการเรียนต้องอ่านสดเสมอ เพื่อให้ % ความคืบหน้าและสถานะส่งผลตรงกับความเป็นจริงเสมอ
     const allScores = getSheetData("StudentScores");
     const allSemesterSubmissions = getSheetData("SemesterSubmissions");
@@ -1206,7 +1237,9 @@ function handleGetDashboardData(body) {
         (String(c.HomeroomTeacherUserID) === String(userId) ||
           String(c.HomeroomTeacherUserID2) === String(userId))
     );
-    const studentCount = myClasses.reduce((sum, c) => sum + (Number(c.StudentCount) || 0), 0);
+    const myClassIdSet = {};
+    myClasses.forEach((c) => (myClassIdSet[String(c.ClassID)] = true));
+    const studentCount = getActiveEnrollments().filter((e) => myClassIdSet[String(e.ClassID)] === true).length;
 
     // ครูประจำชั้นอนุบาลล้วน (ไม่มีห้องประถม): หน้าหลักแสดงสถานะการบันทึก ปถ.12 แทน เพราะอนุบาลไม่มีรายวิชา/การส่งผลการเรียนแบบประถม
     if (myClasses.length > 0 && myClasses.every((c) => isKindergartenGradeLevel(c.GradeLevel))) {
@@ -1315,7 +1348,7 @@ function handleGetDashboardData(body) {
 
     // นับเฉพาะนักเรียนที่จัดเข้าห้องเรียนแล้วในปีการศึกษาปัจจุบัน (ไม่นับที่ยังไม่ได้จัดห้อง)
     const enrolledStudentCount = new Set(
-      getCachedSheetData("StudentEnrollments", 60)
+      getActiveEnrollments()
         .filter((e) => String(e.AcademicYearID) === String(currentYearId))
         .map((e) => String(e.StudentID))
     ).size;
@@ -1367,7 +1400,7 @@ function handleGetDashboardData(body) {
 
   // นับเฉพาะนักเรียนที่จัดเข้าห้องเรียนแล้วในปีการศึกษาปัจจุบัน (ไม่นับที่ยังไม่ได้จัดห้อง)
   const enrolledStudentCount = new Set(
-    getCachedSheetData("StudentEnrollments", 60)
+    getActiveEnrollments()
       .filter((e) => String(e.AcademicYearID) === String(currentYearIdForCount))
       .map((e) => String(e.StudentID))
   ).size;
@@ -1476,6 +1509,7 @@ function handleGetHomeroomSummaryPageData(body) {
     label: c.GradeLevel + "/" + c.RoomNumber,
   }));
 
+  // แสดงนักเรียนทุกสถานะตามเดิม (แต่ละคนมี isActive/studentStatus) — เฉพาะที่ "กำลังศึกษา" เท่านั้นที่นับในการ์ดสรุปและค่าเฉลี่ย
   const enrollments = getCachedSheetData("StudentEnrollments", 60).filter(
     (e) => String(e.ClassID) === String(selectedClassId)
   );
@@ -1514,6 +1548,8 @@ function handleGetHomeroomSummaryPageData(body) {
         studentId: e.StudentID,
         studentNumber: Number(e.StudentNumber) || 0,
         fullName: (st.PrefixName || "") + (st.FirstName || "") + " " + (st.LastName || ""),
+        isActive: isActiveStudentRow(st),
+        studentStatus: st.Status || "",
         gpax: gpax !== null ? Math.round(gpax * 100) / 100 : null,
         completedSubjects: myFinalResults.length,
         totalSubjects: totalGradedSubjects,
@@ -1521,19 +1557,20 @@ function handleGetHomeroomSummaryPageData(body) {
     })
     .sort((a, b) => a.studentNumber - b.studentNumber);
 
-  const completeCount = studentRows.filter(
+  const activeStudentRows = studentRows.filter((s) => s.isActive);
+  const completeCount = activeStudentRows.filter(
     (s) => s.totalSubjects > 0 && s.completedSubjects === s.totalSubjects
   ).length;
-  const gpaxValues = studentRows.filter((s) => s.gpax !== null).map((s) => s.gpax);
+  const gpaxValues = activeStudentRows.filter((s) => s.gpax !== null).map((s) => s.gpax);
   const classAvgGpax =
     gpaxValues.length > 0
       ? (Math.round((gpaxValues.reduce((a, b) => a + b, 0) / gpaxValues.length) * 100) / 100).toFixed(2)
       : "-";
 
   const cards = [
-    { icon: "fa-user-graduate", label: "นักเรียนในห้อง", value: studentRows.length + " คน" },
+    { icon: "fa-user-graduate", label: "นักเรียนในห้อง", value: activeStudentRows.length + " คน" },
     { icon: "fa-chart-line", label: "เกรดเฉลี่ยห้อง (GPAX)", value: classAvgGpax },
-    { icon: "fa-circle-check", label: "ผลการเรียนสมบูรณ์", value: completeCount + " / " + studentRows.length + " คน" },
+    { icon: "fa-circle-check", label: "ผลการเรียนสมบูรณ์", value: completeCount + " / " + activeStudentRows.length + " คน" },
   ];
 
   return {
@@ -2655,6 +2692,8 @@ function handleGetActivityResultMatrix(body) {
         studentId: st.StudentID,
         studentNumber: e.StudentNumber,
         fullName: (st.PrefixName || "") + (st.FirstName || "") + " " + (st.LastName || ""),
+        isActive: isActiveStudentRow(st), // false = ไม่ได้ "กำลังศึกษา" ล็อกการบันทึกผล
+        studentStatus: st.Status || "",
         classId: cls.ClassID,
         className: cls.GradeLevel + "/" + cls.RoomNumber,
         results: results,
@@ -2680,6 +2719,15 @@ function handleSaveActivityResultsBulk(body) {
 
   if (!academicYearId || !Array.isArray(results) || results.length === 0) {
     return { status: "error", message: "ไม่พบข้อมูลที่จะบันทึก" };
+  }
+
+  // ล็อกนักเรียนที่ไม่ได้มีสถานะ "กำลังศึกษา": ห้ามบันทึกผลกิจกรรมให้
+  const activeIdsForActivity = getActiveStudentIdSet();
+  if (results.some((item) => activeIdsForActivity[String(item.studentId)] !== true)) {
+    return {
+      status: "error",
+      message: "ไม่สามารถบันทึกได้ เนื่องจากมีนักเรียนที่ไม่ได้มีสถานะ \"กำลังศึกษา\" กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง",
+    };
   }
 
   const lock = LockService.getScriptLock();
@@ -2838,7 +2886,7 @@ function isPt12RowComplete(r) {
  */
 function buildKindergartenHomeroomDashboard(myClasses, currentYearId) {
   const classIds = myClasses.map((c) => String(c.ClassID));
-  const totalStudents = getCachedSheetData("StudentEnrollments", 60).filter(
+  const totalStudents = getActiveEnrollments().filter(
     (e) => classIds.indexOf(String(e.ClassID)) !== -1
   ).length;
 
@@ -2975,6 +3023,8 @@ function handleGetPt12PageData(body) {
         studentId: st.StudentID,
         studentNumber: e.StudentNumber,
         fullName: (st.PrefixName || "") + (st.FirstName || "") + " " + (st.LastName || ""),
+        isActive: isActiveStudentRow(st), // false = ไม่ได้ "กำลังศึกษา" ล็อกการบันทึกผล
+        studentStatus: st.Status || "",
         thai: saved.ThaiScore === undefined ? "" : saved.ThaiScore,
         math: saved.MathScore === undefined ? "" : saved.MathScore,
         english: saved.EnglishScore === undefined ? "" : saved.EnglishScore,
@@ -3035,7 +3085,7 @@ function handleSavePt12Results(body) {
   const academicYearId = resolved.year.AcademicYearID;
 
   const enrolledStudentIds = {};
-  getCachedSheetData("StudentEnrollments", 60)
+  getActiveEnrollments()
     .filter((e) => String(e.ClassID) === classId)
     .forEach((e) => (enrolledStudentIds[String(e.StudentID)] = e.StudentNumber));
 
@@ -3052,7 +3102,7 @@ function handleSavePt12Results(body) {
     const item = results[i] || {};
     const sid = String(item.studentId);
     if (!enrolledStudentIds.hasOwnProperty(sid)) {
-      return { status: "error", message: "พบนักเรียนที่ไม่ได้อยู่ในห้องเรียนนี้ กรุณารีเฟรชหน้าแล้วลองใหม่" };
+      return { status: "error", message: "พบนักเรียนที่ไม่ได้อยู่ในห้องเรียนนี้หรือไม่ได้มีสถานะ \"กำลังศึกษา\" กรุณารีเฟรชหน้าแล้วลองใหม่" };
     }
     const numberLabel = "เลขที่ " + enrolledStudentIds[sid];
 
@@ -3351,9 +3401,11 @@ function getFinalResultsBySchoolYear(academicYearId) {
   const data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
 
+  // ใช้คำนวณสถิติภาพรวมเท่านั้น: ไม่นับผลของนักเรียนที่ไม่ได้ "กำลังศึกษา" (6 ต.ค. 2569)
+  const activeIds = getActiveStudentIdSet();
   return data
     .slice(1)
-    .filter((r) => String(r[4]) === String(academicYearId))
+    .filter((r) => String(r[4]) === String(academicYearId) && activeIds[String(r[1])] === true)
     .map((r) => ({
       studentId: r[1],
       subjectId: r[2],
@@ -3394,7 +3446,7 @@ function handleGetDirectorReportData(body) {
     (a, b) => GRADE_LEVEL_ORDER_ACTIVITY.indexOf(a) - GRADE_LEVEL_ORDER_ACTIVITY.indexOf(b)
   );
 
-  const totalStudents = getCachedSheetData("StudentEnrollments", 60).filter(
+  const totalStudents = getActiveEnrollments().filter(
     (e) => classIdsCurrentYear.indexOf(String(e.ClassID)) !== -1
   ).length;
 
@@ -3607,7 +3659,7 @@ function handleGetRegistrarTeacherProgressOverview(body) {
     });
 
   const enrollmentsByClassId = {};
-  getCachedSheetData("StudentEnrollments", 60)
+  getActiveEnrollments()
     .filter((e) => classIds.indexOf(String(e.ClassID)) !== -1)
     .forEach((e) => {
       const key = String(e.ClassID);
@@ -3773,7 +3825,7 @@ function handleGetTeacherProgressDetail(body) {
     subComponentsByComponentId[key].push(sc);
   });
 
-  const enrollments = getCachedSheetData("StudentEnrollments", 60).filter((e) => String(e.ClassID) === String(classId));
+  const enrollments = getActiveEnrollments().filter((e) => String(e.ClassID) === String(classId));
   const allStudents = getCachedSheetData("Students", 120);
   const scores = getSheetData("StudentScores").filter(
     (sc) =>
@@ -3994,7 +4046,15 @@ function handleGetClassesPageData() {
     .filter((u) => homeroomUserIds.indexOf(u.UserID) !== -1)
     .map((u) => ({ userId: u.UserID, fullName: u.FullName, position: u.Position }));
 
-  const classes = getCachedSheetData("Classes", 60);
+  // จำนวนนักเรียนในห้อง นับเฉพาะนักเรียนที่ "กำลังศึกษา" (ไม่ใช้ค่า StudentCount ที่เก็บไว้ในชีต เพราะไม่ตามการเปลี่ยนสถานะนักเรียน)
+  const activeCountByClass = {};
+  getActiveEnrollments().forEach((e) => {
+    const k = String(e.ClassID);
+    activeCountByClass[k] = (activeCountByClass[k] || 0) + 1;
+  });
+  const classes = getCachedSheetData("Classes", 60).map((c) =>
+    Object.assign({}, c, { StudentCount: activeCountByClass[String(c.ClassID)] || 0 })
+  );
 
   const data = { academicYears, homeroomTeachers, classes };
   cache.put("classesPageData", JSON.stringify(data), 120); // แคชสั้นกว่ารายวิชา เพราะ StudentCount เปลี่ยนบ่อยกว่า
@@ -4876,6 +4936,8 @@ function handleGetGradeEntryPageData(body) {
         studentId: e.StudentID,
         studentNumber: e.StudentNumber,
         fullName: st ? (st.PrefixName || "") + st.FirstName + " " + st.LastName : e.StudentID,
+        isActive: isActiveStudentRow(st), // false = ไม่ได้ "กำลังศึกษา" ล็อกการบันทึกคะแนน
+        studentStatus: st ? st.Status || "" : "",
       };
     })
     .sort((a, b) => Number(a.studentNumber) - Number(b.studentNumber));
@@ -4974,6 +5036,16 @@ function handleSaveStudentScores(body) {
     }
   }
 
+  // ล็อกนักเรียนที่ไม่ได้มีสถานะ "กำลังศึกษา": ห้ามบันทึกคะแนนให้ (ตรวจฝั่ง Server เสมอ เผื่อมีการยิง request ตรง)
+  const activeIdsForScores = getActiveStudentIdSet();
+  const lockedInScores = scores.filter((s) => activeIdsForScores[String(s.studentId)] !== true);
+  if (lockedInScores.length > 0) {
+    return {
+      status: "error",
+      message: "ไม่สามารถบันทึกคะแนนได้ เนื่องจากมีนักเรียนที่ไม่ได้มีสถานะ \"กำลังศึกษา\" กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง",
+    };
+  }
+
   // กันชนกันตอนมีครูหลายคนบันทึกคะแนนพร้อมกัน (รองรับสูงสุด ~80 คนพร้อมกัน)
   const lock = LockService.getScriptLock();
   const gotLock = lock.tryLock(20000); // รอคิวสูงสุด 20 วินาที
@@ -5002,7 +5074,9 @@ function handleSaveStudentScores(body) {
     const existingMap = {};
     for (let r = 1; r < data.length; r++) {
       const row = data[r];
+      // ข้ามแถวคะแนนของนักเรียนที่ไม่ได้ "กำลังศึกษา": หน้ากรอกไม่ส่งคะแนนของคนเหล่านี้มา ถ้าไม่ข้ามจะถูกลบทิ้งผิดๆ ในขั้นตอนลบด้านล่าง
       if (
+        activeIdsForScores[String(row[colIndex.StudentID])] === true &&
         String(row[colIndex.ClassID]) === String(classId) &&
         String(row[colIndex.SubjectID]) === String(subjectId) &&
         String(row[colIndex.AcademicYearID]) === String(academicYearId) &&
@@ -5436,6 +5510,8 @@ function syncFinalResultsForYear(subjectId, academicYearId, classId, userId) {
   }, 0);
 
   results.forEach((res) => {
+    // ไม่บันทึก/ไม่อัปเดตผลการเรียนของนักเรียนที่ไม่ได้ "กำลังศึกษา" (แถวเดิมที่เคยบันทึกไว้คงอยู่ตามเดิม)
+    if (res.isActive === false) return;
     const rowValues = [
       null,
       res.studentId,
@@ -5502,6 +5578,8 @@ function buildFinalizeData(subjectId, academicYearId, classId, userId) {
         studentId: st.StudentID,
         studentNumber: e.StudentNumber,
         fullName: st.PrefixName + st.FirstName + " " + st.LastName,
+        isActive: isActiveStudentRow(st), // false = ไม่ได้ "กำลังศึกษา" ไม่บันทึกลง FinalResults
+        studentStatus: st.Status || "",
       };
     })
     .filter(Boolean)
@@ -5532,6 +5610,8 @@ function buildFinalizeData(subjectId, academicYearId, classId, userId) {
       studentId: st.studentId,
       studentNumber: st.studentNumber,
       fullName: st.fullName,
+      isActive: st.isActive,
+      studentStatus: st.studentStatus,
       semester1Raw70: sem1.raw70,
       semester1Exam30: sem1.exam30,
       semester1Total100: sem1.total100,
@@ -5568,6 +5648,8 @@ function buildSemester1OnlyData(subjectId, academicYearId, classId, userId) {
         studentId: st.StudentID,
         studentNumber: e.StudentNumber,
         fullName: st.PrefixName + st.FirstName + " " + st.LastName,
+        isActive: isActiveStudentRow(st), // false = ไม่ได้ "กำลังศึกษา" ไม่บันทึกลง FinalResults
+        studentStatus: st.Status || "",
       };
     })
     .filter(Boolean)
@@ -5593,6 +5675,8 @@ function buildSemester1OnlyData(subjectId, academicYearId, classId, userId) {
       studentId: st.studentId,
       studentNumber: st.studentNumber,
       fullName: st.fullName,
+      isActive: st.isActive,
+      studentStatus: st.studentStatus,
       semester1Raw70: sem1.raw70,
       semester1Exam30: sem1.exam30,
       semester1Total100: sem1.total100,
@@ -5637,7 +5721,7 @@ function handleGetFinalizePageData(body) {
  * คืน array ของนักเรียนที่ยังขาดคะแนน (ว่าง = ครบทุกคนแล้ว) ถ้ายังไม่ได้ตั้งค่าช่องเก็บคะแนนของภาคเรียนนี้เลย ถือว่านักเรียนทุกคน "ขาดคะแนน" เช่นกัน
  */
 function getMissingScoreStudents(subjectId, academicYearId, classId, semester) {
-  const enrollments = getCachedSheetData("StudentEnrollments", 60).filter((e) => String(e.ClassID) === String(classId));
+  const enrollments = getActiveEnrollments().filter((e) => String(e.ClassID) === String(classId));
   if (enrollments.length === 0) return [];
 
   const allStudents = getCachedSheetData("Students", 120);
@@ -5714,7 +5798,7 @@ function handleSubmitFinalResults(body) {
     return { status: "error", message: "คุณไม่มีสิทธิ์บันทึกผลการเรียนวิชา/ห้องเรียนนี้" };
   }
 
-  const enrollmentCount = getCachedSheetData("StudentEnrollments", 60).filter(
+  const enrollmentCount = getActiveEnrollments().filter(
     (e) => String(e.ClassID) === String(classId)
   ).length;
   if (enrollmentCount === 0) {
