@@ -105,7 +105,7 @@ function renderHomeroomSummary(data) {
     <tr class="border-b border-gray-100">
       <td class="px-4 py-3 text-center text-gray-600">${s.studentNumber}</td>
       <td class="px-4 py-3 font-medium text-wsecondary">${s.studentId}</td>
-      <td class="px-4 py-3 text-gray-700">${s.fullName}</td>
+      <td class="px-4 py-3 text-gray-700">${s.fullName}${s.isActive === false ? `<span class="ml-2 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">${String(s.studentStatus || "ไม่ได้กำลังศึกษา").replace(/[<>&"]/g, "")}</span>` : ""}</td>
       <td class="px-4 py-3 text-center">
         <span class="text-xs font-medium px-2.5 py-1 rounded-full ${gpaxBadgeClass(s.gpax)}">${s.gpax !== null ? s.gpax.toFixed(2) : "-"}</span>
       </td>
