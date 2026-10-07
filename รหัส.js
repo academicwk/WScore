@@ -28,7 +28,7 @@ const PT06_TEMPLATE_FILE_ID = "1Txwjtf81EzQVlt5Wx5DWU7e4A4mGBGsx8G6o-K1AxsM";
 // PT12_TEMPLATE_FILE_ID = File ID ของไฟล์ Google Sheets ต้นแบบ ปถ.12 (แปลงจากไฟล์ .xlsx เทมเพลตที่ผู้ใช้ส่งมา มีชีตเดียวชื่อ "ปพ.6")
 // *** ต้องอัปโหลดไฟล์เทมเพลตขึ้น Google Drive แล้วเปิดด้วย Google Sheets (ไฟล์ > บันทึกเป็น Google ชีต) จากนั้นนำ File ID มาใส่แทนข้อความด้านล่าง ***
 // โฟลเดอร์เก็บ PDF ระบบสร้างให้เองครั้งแรก (ดู getPt12ReportsFolderId())
-const PT12_TEMPLATE_FILE_ID = "ใส่_FILE_ID_เทมเพลต_ปถ12";
+const PT12_TEMPLATE_FILE_ID = "19uJFtFkphSSJoZ5rD6LREOx1liEzK8dKmCGB5UkLJVM";
 
 /**
  * Action ที่จำกัดให้ใช้ได้เฉพาะบางบทบาทเท่านั้น (นอกเหนือจากนี้ = ใช้ได้ทุกคนที่ login แล้ว)
@@ -75,6 +75,7 @@ const ACTION_ROLES = {
   getGradeSetup: ["SUBJECT_TEACHER"],
   addGradeSubComponent: ["SUBJECT_TEACHER"],
   deleteGradeSubComponent: ["SUBJECT_TEACHER"],
+  updateGradeSubComponent: ["SUBJECT_TEACHER"],
   getGradeEntryPageData: ["SUBJECT_TEACHER"],
   saveStudentScores: ["SUBJECT_TEACHER"],
   getFinalizePageData: ["SUBJECT_TEACHER"],
@@ -262,6 +263,9 @@ function doPost(e) {
       case "deleteGradeSubComponent":
         result = handleDeleteGradeSubComponent(body);
         break;
+      case "updateGradeSubComponent":
+        result = handleUpdateGradeSubComponent(body);
+        break;
       case "getGradeEntryPageData":
         result = handleGetGradeEntryPageData(body);
         break;
@@ -429,6 +433,21 @@ function getActiveStudentIdSet() {
     if (isActiveStudentRow(st)) set[String(st.StudentID)] = true;
   });
   return set;
+}
+
+/**
+ * ชุด "ช่องเก็บคะแนนที่ยังมีอยู่จริง" ในรูป key "ComponentID|SubComponentID" (หน่วย) และ "ComponentID|" (ปลายภาค)
+ * ใช้นับความครบของคะแนนโดยไม่นับคะแนนที่ค้างอยู่ของช่องที่ถูกลบไปแล้ว (7 ต.ค. 2569)
+ */
+function getValidScoreCellSet() {
+  const valid = {};
+  getCachedSheetData("GradeComponents", 120).forEach((c) => {
+    if (c.ComponentType === "ปลายภาค") valid[String(c.ComponentID) + "|"] = true;
+  });
+  getCachedSheetData("GradeSubComponents", 60).forEach((sc) => {
+    valid[String(sc.ComponentID) + "|" + String(sc.SubComponentID)] = true;
+  });
+  return valid;
 }
 
 // รายการจัดเข้าห้อง เฉพาะนักเรียนที่ "กำลังศึกษา" (ใช้กับการนับ/การบันทึกผลทุกจุด)
@@ -1112,6 +1131,8 @@ function handleGetDashboardData(body) {
     // คะแนนและสถานะส่งผลการเรียนต้องอ่านสดเสมอ เพื่อให้ % ความคืบหน้าและสถานะส่งผลตรงกับความเป็นจริงเสมอ
     const allScores = getSheetData("StudentScores");
     const allSemesterSubmissions = getSheetData("SemesterSubmissions");
+    const validCellsDash = getValidScoreCellSet();
+    const activeIdsDash = getActiveStudentIdSet();
 
     const progress = myAssignments.map((a) => {
       const cls = classes.find((c) => String(c.ClassID) === String(a.ClassID));
@@ -1139,8 +1160,13 @@ function handleGetDashboardData(body) {
             : allSubComponents.filter((sc) => String(sc.ComponentID) === String(c.ComponentID)).length;
           const required = isFinalExam ? studentCount : studentCount * subCount;
 
+          // นับเฉพาะคะแนนของช่องที่ยังมีอยู่จริง และของนักเรียนที่ "กำลังศึกษา" (ให้สอดคล้องกับจำนวนที่ต้องกรอก)
           const filled = allScores.filter(
-            (s) => String(s.ClassID) === String(a.ClassID) && String(s.ComponentID) === String(c.ComponentID)
+            (s) =>
+              String(s.ClassID) === String(a.ClassID) &&
+              String(s.ComponentID) === String(c.ComponentID) &&
+              validCellsDash[String(s.ComponentID) + "|" + (s.SubComponentID || "")] === true &&
+              activeIdsDash[String(s.StudentID)] === true
           ).length;
 
           const percent = required === 0 ? 0 : Math.min(100, Math.round((filled / required) * 100));
@@ -2015,10 +2041,12 @@ function buildPt06PrintRows(subjectRows) {
     let gradePoint = null;
 
     if (bothSubmitted && s.semester1Raw70 !== null && s.semester2Raw70 !== null) {
-      yearRaw70 = (Number(s.semester1Raw70) + Number(s.semester2Raw70)) / 2;
-      yearExam30 = (Number(s.semester1Exam30) + Number(s.semester2Exam30)) / 2;
-      yearTotal100 = s.yearScore100 !== null && s.yearScore100 !== undefined ? Number(s.yearScore100) : yearRaw70 + yearExam30;
-      gradePoint = s.gradePoint !== null && s.gradePoint !== undefined ? Number(s.gradePoint) : scoreToGradePoint(yearTotal100);
+      // คิดจากคะแนนภาคเรียนด้วยกฎปัดเดียวกับตอนส่งผลการเรียนเสมอ (แถว FinalResults เก่าที่เก็บค่าไม่ปัดจึงไม่ทำให้ตัวเลข/เกรดเพี้ยน)
+      const yearScores = computeYearScores(s.semester1Raw70, s.semester1Exam30, s.semester2Raw70, s.semester2Exam30);
+      yearRaw70 = yearScores.raw70;
+      yearExam30 = yearScores.exam30;
+      yearTotal100 = yearScores.total100;
+      gradePoint = scoreToGradePoint(yearTotal100);
     }
 
     return {
@@ -3637,6 +3665,7 @@ function handleGetRegistrarTeacherProgressOverview(body) {
       componentsBySubject[key].push(c);
     });
 
+  const validCells = getValidScoreCellSet();
   const subComponentCountByComponentId = {};
   getCachedSheetData("GradeSubComponents", 60).forEach((sc) => {
     const key = String(sc.ComponentID);
@@ -3707,7 +3736,8 @@ function handleGetRegistrarTeacherProgressOverview(body) {
         comboScores.forEach((sc) => {
           const sid = String(sc.StudentID);
           if (!recordedSetByStudent[sid]) recordedSetByStudent[sid] = new Set();
-          recordedSetByStudent[sid].add(sc.ComponentID + "|" + (sc.SubComponentID || ""));
+          const cellKey = sc.ComponentID + "|" + (sc.SubComponentID || "");
+          if (validCells[cellKey] === true) recordedSetByStudent[sid].add(cellKey); // ไม่นับคะแนนค้างของช่องที่ถูกลบแล้ว
         });
         studentIds.forEach((sid) => {
           const recordedCount = recordedSetByStudent[sid] ? recordedSetByStudent[sid].size : 0;
@@ -3859,7 +3889,11 @@ function handleGetTeacherProgressDetail(body) {
       const recorded = isFinalExam
         ? scoresForStudent.filter((sc) => String(sc.ComponentID) === String(c.ComponentID)).length
         : new Set(
-            scoresForStudent.filter((sc) => String(sc.ComponentID) === String(c.ComponentID)).map((sc) => sc.SubComponentID)
+            scoresForStudent
+              .filter((sc) => String(sc.ComponentID) === String(c.ComponentID))
+              .map((sc) => String(sc.SubComponentID))
+              // นับเฉพาะช่องที่ยังมีอยู่จริง (ไม่นับคะแนนค้างของช่องที่ถูกลบไปแล้ว)
+              .filter((id) => (subComponentsByComponentId[String(c.ComponentID)] || []).some((x) => String(x.SubComponentID) === id))
           ).size;
 
       if (recorded < expected) {
@@ -4810,6 +4844,11 @@ function handleAddGradeSubComponent(body) {
     };
   }
 
+  // เพิ่ม/ลบช่องเก็บคะแนนได้เฉพาะในช่วงเวลาที่นายทะเบียนเปิดให้บันทึกคะแนนของภาคเรียนนั้น (7 ต.ค. 2569)
+  if (!isGradingPeriodOpen(component.AcademicYearID, component.Semester)) {
+    return { status: "error", message: GRADE_STRUCTURE_PERIOD_CLOSED_MESSAGE };
+  }
+
   // ล็อกกันช่องเก็บคะแนนซ้ำรหัส/เกิน 10 ช่อง กรณีกดเพิ่มพร้อมกัน (เช่น กดปุ่มรัว หรือเปิดหลายแท็บ)
   const lock = LockService.getScriptLock();
   const gotLock = lock.tryLock(20000);
@@ -4843,7 +4882,9 @@ function handleAddGradeSubComponent(body) {
     });
     const newId = "GSC" + String(maxNum + 1).padStart(5, "0");
 
-    SS.getSheetByName("GradeSubComponents").appendRow([newId, componentId, subComponentName, maxScore, existing.length + 1]);
+    // ลำดับใหม่ = ลำดับมากสุดที่มีอยู่ + 1 (ไม่ใช้จำนวนช่อง เพราะลำดับอาจซ้ำถ้าเคยลบช่องกลาง)
+    const nextOrder = existing.reduce((m, sc) => Math.max(m, Number(sc.OrderIndex) || 0), 0) + 1;
+    SS.getSheetByName("GradeSubComponents").appendRow([newId, componentId, subComponentName, maxScore, nextOrder]);
     invalidateSheetCache("GradeSubComponents");
 
     return { status: "success", data: { subComponentId: newId } };
@@ -4852,11 +4893,72 @@ function handleAddGradeSubComponent(body) {
   }
 }
 
+const GRADE_STRUCTURE_PERIOD_CLOSED_MESSAGE =
+  "ไม่สามารถเพิ่ม/ลบช่องเก็บคะแนนได้ เนื่องจากยังไม่ถึง หรือพ้นช่วงเวลาที่นายทะเบียนกำหนดให้บันทึกคะแนนของภาคเรียนนี้แล้ว กรุณาติดต่อนายทะเบียนเพื่อขอเปิดช่วงเวลา";
+
+/**
+ * แก้ไขชื่อช่องเก็บคะแนน (เฉพาะชื่อ ไม่แตะรหัสช่อง/คะแนนที่บันทึกไว้) — 7 ต.ค. 2569
+ * แก้ได้ตราบที่ภาคเรียนนั้นของวิชานี้ยังไม่ถูก "ส่งผลการเรียน" (ไม่ผูกกับช่วงเวลาบันทึกคะแนน เพราะไม่กระทบการคำนวณ)
+ */
+function handleUpdateGradeSubComponent(body) {
+  const subComponentId = body.subComponentId;
+  const newName = String(body.subComponentName || "").trim();
+
+  if (!subComponentId) return { status: "error", message: "ไม่พบช่องเก็บคะแนนที่ต้องการแก้ไข" };
+  if (!newName) return { status: "error", message: "กรุณาระบุชื่อช่องเก็บคะแนน" };
+  if (newName.length > 100) return { status: "error", message: "ชื่อช่องเก็บคะแนนยาวเกินไป (ไม่เกิน 100 ตัวอักษร)" };
+
+  const subComponent = getSheetData("GradeSubComponents").find((sc) => String(sc.SubComponentID) === String(subComponentId));
+  if (!subComponent) return { status: "error", message: "ไม่พบช่องเก็บคะแนนนี้" };
+
+  const component = getSheetData("GradeComponents").find((c) => String(c.ComponentID) === String(subComponent.ComponentID));
+  if (!component || !isAssignedToTeach(body.userId, component.SubjectID, component.AcademicYearID)) {
+    return { status: "error", message: "คุณไม่มีสิทธิ์แก้ไขข้อมูลวิชานี้" };
+  }
+
+  if (isSemesterSubmittedForAnyClass(component.SubjectID, component.AcademicYearID, component.Semester)) {
+    return {
+      status: "error",
+      message: `ไม่สามารถแก้ไขชื่อช่องเก็บคะแนนได้ เนื่องจากภาคเรียนที่ ${component.Semester} ของวิชานี้ "ส่งผลการเรียน" ไปแล้ว`,
+    };
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    return { status: "error", message: "ขณะนี้มีผู้ใช้งานบันทึกข้อมูลพร้อมกันจำนวนมาก กรุณาลองใหม่อีกครั้ง" };
+  }
+
+  try {
+    const sheet = SS.getSheetByName("GradeSubComponents");
+    const data = sheet.getDataRange().getValues();
+    const idCol = data[0].indexOf("SubComponentID");
+    const nameCol = data[0].indexOf("SubComponentName");
+    if (idCol === -1 || nameCol === -1) {
+      return { status: "error", message: "ไม่พบคอลัมน์ในชีต GradeSubComponents กรุณาติดต่อผู้ดูแลระบบ" };
+    }
+
+    for (let r = 1; r < data.length; r++) {
+      if (String(data[r][idCol]).trim() === String(subComponentId).trim()) {
+        sheet.getRange(r + 1, nameCol + 1).setValue(newName);
+        invalidateSheetCache("GradeSubComponents");
+        return { status: "success" };
+      }
+    }
+    return { status: "error", message: "ไม่พบช่องเก็บคะแนนนี้" };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /**
  * ลบช่องเก็บคะแนนย่อย ต้องเป็นครูที่สอนวิชานี้จริงเท่านั้น
+ * 7 ต.ค. 2569: ถ้าช่องนี้มีคะแนนบันทึกไว้แล้ว ต้องยืนยัน (body.force = true) ก่อน — ครั้งแรกคืน status "needs_confirm" พร้อมจำนวนที่กระทบ
+ * เมื่อลบจริง จะลบแถวคะแนนของช่องนั้นออกจากทุกห้องของวิชา/ภาคเรียนเดียวกันพร้อมกัน (ไม่ปล่อยคะแนนค้าง) และเรียงลำดับช่องที่เหลือใหม่เป็น 1,2,3...
+ * เพิ่ม/ลบได้เฉพาะในช่วงเวลาที่นายทะเบียนเปิดให้บันทึกคะแนนของภาคเรียนนั้น
  */
 function handleDeleteGradeSubComponent(body) {
   const subComponentId = body.subComponentId;
+  const force = body.force === true;
 
   const subComponent = getSheetData("GradeSubComponents").find(
     (sc) => String(sc.SubComponentID) === String(subComponentId)
@@ -4872,17 +4974,43 @@ function handleDeleteGradeSubComponent(body) {
     return { status: "error", message: "คุณไม่มีสิทธิ์แก้ไขข้อมูลวิชานี้" };
   }
 
-  // ห้ามแก้โครงสร้างช่องเก็บคะแนน (เพิ่ม/ลบ) ถ้าภาคเรียนนี้ของวิชานี้มีห้องใดห้องหนึ่ง "ส่งผลการเรียน" ไปแล้ว (เหตุผลเดียวกับ handleAddGradeSubComponent)
+  const submittedMessage = `ไม่สามารถแก้ไขโครงสร้างช่องเก็บคะแนนได้ เนื่องจากภาคเรียนที่ ${component.Semester} ของวิชานี้ "ส่งผลการเรียน" ไปแล้ว (โครงสร้างช่องเก็บคะแนนใช้ร่วมกันทุกห้องของวิชา/ปี/ภาคเรียนเดียวกัน) กรุณา "ถอนผลการเรียน" ให้ครบทุกห้องก่อน`;
+
+  // ห้ามแก้โครงสร้างช่องเก็บคะแนน (เพิ่ม/ลบ) ถ้าภาคเรียนนี้ของวิชานี้มีห้องใดส่งผลการเรียนไปแล้ว
   if (isSemesterSubmittedForAnyClass(component.SubjectID, component.AcademicYearID, component.Semester)) {
-    return {
-      status: "error",
-      message: `ไม่สามารถแก้ไขโครงสร้างช่องเก็บคะแนนได้ เนื่องจากภาคเรียนที่ ${component.Semester} ของวิชานี้มีบางห้อง "ส่งผลการเรียน" ไปแล้ว กรุณา "ถอนผลการเรียน" ของห้องนั้นก่อน จึงจะแก้ไขโครงสร้างคะแนนได้`,
-    };
+    return { status: "error", message: submittedMessage };
   }
 
-  // ล็อกกันการลบชนกัน (เช่น ครูที่สอนวิชาเดียวกันคนละห้องเปิดหน้านี้พร้อมกันแล้วกดลบคนละช่องใกล้ๆ กัน)
-  // GradeComponents/GradeSubComponents ใช้ร่วมกันทุกห้องของวิชา/ปี/ภาคเรียนเดียวกัน ถ้าไม่ล็อก ตำแหน่งแถวที่หาไว้ก่อนลบ
-  // อาจคลาดเคลื่อนไปจากแถวจริงถ้ามีการลบแถวอื่นแทรกเข้ามาก่อนพอดี ทำให้ลบช่องเก็บคะแนนผิดช่อง/ผิดวิชาไปโดยไม่ตั้งใจ — 5 ต.ค. 2569
+  if (!isGradingPeriodOpen(component.AcademicYearID, component.Semester)) {
+    return { status: "error", message: GRADE_STRUCTURE_PERIOD_CLOSED_MESSAGE };
+  }
+
+  // ยังไม่ยืนยัน: นับจำนวนคะแนนที่จะหายไปให้ครูเห็นก่อน (อ่านสด เพราะเป็นข้อมูลที่ครูเพิ่งกรอก)
+  if (!force) {
+    const affected = getSheetData("StudentScores").filter(
+      (sc) => String(sc.SubComponentID) === String(subComponentId)
+    );
+    if (affected.length > 0) {
+      const studentSet = {};
+      const classSet = {};
+      affected.forEach((sc) => {
+        studentSet[String(sc.StudentID)] = true;
+        classSet[String(sc.ClassID)] = true;
+      });
+      return {
+        status: "needs_confirm",
+        message: "ช่องเก็บคะแนนนี้มีคะแนนที่บันทึกไว้แล้ว",
+        data: {
+          scoreCount: affected.length,
+          studentCount: Object.keys(studentSet).length,
+          classCount: Object.keys(classSet).length,
+        },
+      };
+    }
+  }
+
+  // ล็อกกันการลบชนกัน (เช่น ครูที่สอนวิชาเดียวกันคนละห้องเปิดหน้านี้พร้อมกัน)
+  // GradeComponents/GradeSubComponents ใช้ร่วมกันทุกห้องของวิชา/ปี/ภาคเรียนเดียวกัน
   const lock = LockService.getScriptLock();
   const gotLock = lock.tryLock(20000);
   if (!gotLock) {
@@ -4890,22 +5018,61 @@ function handleDeleteGradeSubComponent(body) {
   }
 
   try {
-    // เช็คซ้ำอีกครั้งหลังได้ lock แล้ว เผื่อมีการส่งผลการเรียนแทรกเข้ามาระหว่างรอคิว (เหตุผลเดียวกับ handleAddGradeSubComponent)
+    // เช็คซ้ำอีกครั้งหลังได้ lock แล้ว เผื่อมีการส่งผลการเรียนแทรกเข้ามาระหว่างรอคิว
     if (isSemesterSubmittedForAnyClass(component.SubjectID, component.AcademicYearID, component.Semester)) {
-      return {
-        status: "error",
-        message: `ไม่สามารถแก้ไขโครงสร้างช่องเก็บคะแนนได้ เนื่องจากภาคเรียนที่ ${component.Semester} ของวิชานี้มีบางห้อง "ส่งผลการเรียน" ไปแล้ว กรุณา "ถอนผลการเรียน" ของห้องนั้นก่อน จึงจะแก้ไขโครงสร้างคะแนนได้`,
-      };
+      return { status: "error", message: submittedMessage };
     }
 
-    // หาตำแหน่งแถว "หลังได้ lock แล้ว" เท่านั้น (ข้อมูลสดล่าสุด ไม่ใช่ตำแหน่งที่หาไว้ก่อนเข้าคิว) เพื่อไม่ให้ลบแถวผิดถ้ามีคนอื่นลบแถวอื่นแทรกไปก่อน
-    const rowIndex = findRowIndexByColumnValue("GradeSubComponents", "SubComponentID", subComponentId);
-    if (rowIndex === -1) {
+    // หาตำแหน่งแถว "หลังได้ lock แล้ว" เท่านั้น (ข้อมูลสดล่าสุด ไม่ใช่ตำแหน่งเก่า)
+    const subSheet = SS.getSheetByName("GradeSubComponents");
+    const subData = subSheet.getDataRange().getValues();
+    const subHeaders = subData[0];
+    const subIdCol = subHeaders.indexOf("SubComponentID");
+    const subCompCol = subHeaders.indexOf("ComponentID");
+    const subOrderCol = subHeaders.indexOf("OrderIndex");
+
+    let targetRow = -1;
+    for (let r = 1; r < subData.length; r++) {
+      if (String(subData[r][subIdCol]).trim() === String(subComponentId).trim()) {
+        targetRow = r + 1;
+        break;
+      }
+    }
+    if (targetRow === -1) {
       return { status: "error", message: "ไม่พบช่องเก็บคะแนนนี้" };
     }
-    SS.getSheetByName("GradeSubComponents").deleteRow(rowIndex);
+
+    // 1) ลบแถวคะแนนของช่องนี้ออกจากทุกห้องก่อน (กันคะแนนค้าง) แล้วจึงลบตัวช่อง
+    const scoreSheet = SS.getSheetByName("StudentScores");
+    const scoreData = scoreSheet.getDataRange().getValues();
+    const scoreSubCol = scoreData[0].indexOf("SubComponentID");
+    const scoreRowsToDelete = [];
+    for (let r = 1; r < scoreData.length; r++) {
+      if (String(scoreData[r][scoreSubCol]).trim() === String(subComponentId).trim()) scoreRowsToDelete.push(r + 1);
+    }
+    if (scoreRowsToDelete.length > 0) deleteSheetRowsDescending(scoreSheet, scoreRowsToDelete);
+
+    subSheet.deleteRow(targetRow);
+
+    // 2) เรียงลำดับ (OrderIndex) ของช่องที่เหลือในหน่วยเดียวกันใหม่เป็น 1,2,3...
+    if (subOrderCol !== -1) {
+      const remaining = [];
+      for (let r = 1; r < subData.length; r++) {
+        if (r + 1 === targetRow) continue;
+        if (String(subData[r][subCompCol]) === String(subComponent.ComponentID)) {
+          remaining.push({ oldRow: r + 1, order: Number(subData[r][subOrderCol]) || 0 });
+        }
+      }
+      remaining.sort((a, b) => a.order - b.order || a.oldRow - b.oldRow);
+      remaining.forEach((item, i) => {
+        // แถวที่อยู่ต่ำกว่าแถวที่ลบจะเลื่อนขึ้น 1 แถว
+        const newRow = item.oldRow > targetRow ? item.oldRow - 1 : item.oldRow;
+        if (item.order !== i + 1) subSheet.getRange(newRow, subOrderCol + 1).setValue(i + 1);
+      });
+    }
+
     invalidateSheetCache("GradeSubComponents");
-    return { status: "success" };
+    return { status: "success", data: { deletedScoreCount: scoreRowsToDelete.length } };
   } finally {
     lock.releaseLock();
   }
@@ -5199,11 +5366,32 @@ function computeSemesterScores(components, scoresMap, studentId) {
 
   // แปลงสัดส่วนคะแนนหน่วย (ระหว่างภาค) ให้เป็นฐาน 70 และคะแนนปลายภาคให้เป็นฐาน 30 เสมอ
   // ไม่ว่าคะแนนเต็มจริงที่ตั้งค่าไว้ของแต่ละส่วนจะเป็นเท่าไหร่ก็ตาม แล้วจึงรวมกันเป็นคะแนนเต็ม 100
-  const raw70 = unitsMax > 0 ? (unitsRaw / unitsMax) * 70 : 0;
-  const exam30 = examMax > 0 ? (examRaw / examMax) * 30 : 0;
-  const total100 = raw70 + exam30;
+  // 7 ต.ค. 2569: ปัดทศนิยม 2 ตำแหน่งตั้งแต่ขั้นนี้ ให้ "ค่าที่เก็บ = ค่าที่แสดง = ค่าที่ใช้ตัดเกรด" เสมอ
+  // (เดิมเก็บค่าเต็มไม่ปัด แต่แสดงปัด 2 ตำแหน่ง ทำให้บางกรณีแสดง 60.00 แต่ค่าจริง 59.999… ได้เกรดต่ำกว่าที่เห็น)
+  // คำนวณเป็น "สตางค์" (จำนวนเต็ม) เพื่อตัดปัญหาทศนิยมคลาดเคลื่อน: รวม = ระหว่างภาคที่ปัดแล้ว + ปลายภาคที่ปัดแล้ว
+  const raw70Cents = toScoreCents(unitsMax > 0 ? (unitsRaw / unitsMax) * 70 : 0);
+  const exam30Cents = toScoreCents(examMax > 0 ? (examRaw / examMax) * 30 : 0);
 
-  return { raw70: raw70, exam30: exam30, total100: total100 };
+  return { raw70: raw70Cents / 100, exam30: exam30Cents / 100, total100: (raw70Cents + exam30Cents) / 100 };
+}
+
+/**
+ * ปัดคะแนนเป็นทศนิยม 2 ตำแหน่ง (ปัดขึ้นเมื่อเป็น .5 พอดี) คืนค่าเป็น "จำนวนเต็มหน่วยสตางค์" เช่น 79.995 -> 8000
+ * เติมค่าเล็กน้อย (1e-6) เพื่อกันกรณีเลขทศนิยมคลาดเคลื่อน เช่น 49.99999999999999 ต้องได้ 5000 และ 0.285 ต้องได้ 29 ไม่ใช่ 28
+ * ต้องใช้กฎเดียวกับหน้าเว็บ (fmtScore2 ใน grade-entry.js)
+ */
+function toScoreCents(x) {
+  return Math.round(Number(x) * 100 + 1e-6);
+}
+
+/**
+ * คะแนนทั้งปีจากคะแนนของ 2 ภาคเรียน: ระหว่างภาค/ปลายภาค = ค่าเฉลี่ยของ 2 ภาค (ปัดขึ้นเมื่อ .5 พอดี) รวม = ระหว่างภาค + ปลายภาค
+ * ทำให้ตัวเลขที่แสดงบวกกันได้พอดีเสมอ และเป็นค่าเดียวที่ใช้ตัดเกรด ทุกค่าเป็นทศนิยมไม่เกิน 2 ตำแหน่ง (7 ต.ค. 2569)
+ */
+function computeYearScores(sem1Raw70, sem1Exam30, sem2Raw70, sem2Exam30) {
+  const raw70Cents = Math.round((toScoreCents(sem1Raw70) + toScoreCents(sem2Raw70)) / 2);
+  const exam30Cents = Math.round((toScoreCents(sem1Exam30) + toScoreCents(sem2Exam30)) / 2);
+  return { raw70: raw70Cents / 100, exam30: exam30Cents / 100, total100: (raw70Cents + exam30Cents) / 100 };
 }
 
 // ===== ควบคุมช่วงเวลาเปิด/ปิดการบันทึกคะแนน (Sheet: GradingPeriods) =====
@@ -5603,7 +5791,8 @@ function buildFinalizeData(subjectId, academicYearId, classId, userId) {
   const results = students.map((st) => {
     const sem1 = computeSemesterScores(components1, scoresMap1, st.studentId);
     const sem2 = computeSemesterScores(components2, scoresMap2, st.studentId);
-    const yearScore100 = (sem1.total100 + sem2.total100) / 2;
+    // คะแนนปี/เกรดคิดจากค่าที่ปัดแล้วเหมือนที่แสดงบนหน้าจอ (ดู computeYearScores)
+    const yearScore100 = computeYearScores(sem1.raw70, sem1.exam30, sem2.raw70, sem2.exam30).total100;
     const gradePoint = scoreToGradePoint(yearScore100);
 
     return {
@@ -5770,7 +5959,11 @@ function getMissingScoreStudents(subjectId, academicYearId, classId, semester) {
       const recorded = isFinalExam
         ? scoresForStudent.filter((sc) => String(sc.ComponentID) === String(c.ComponentID)).length
         : new Set(
-            scoresForStudent.filter((sc) => String(sc.ComponentID) === String(c.ComponentID)).map((sc) => sc.SubComponentID)
+            scoresForStudent
+              .filter((sc) => String(sc.ComponentID) === String(c.ComponentID))
+              .map((sc) => String(sc.SubComponentID))
+              // นับเฉพาะช่องที่ยังมีอยู่จริง (ไม่นับคะแนนค้างของช่องที่ถูกลบไปแล้ว)
+              .filter((id) => (subComponentsByComponentId[String(c.ComponentID)] || []).some((x) => String(x.SubComponentID) === id))
           ).size;
       return recorded < expected;
     });
@@ -6242,4 +6435,40 @@ function handleGenerateSubjectReport(body) {
     // เก็บเฉพาะไฟล์ PDF ไว้ ลบไฟล์ Google Sheets ชั่วคราวที่ใช้กรอกข้อมูลทิ้ง
     copyFile.setTrashed(true);
   }
+}
+
+/**
+ * ===== งานบำรุงรักษา (รันมือครั้งเดียวจาก Apps Script Editor) — 7 ต.ค. 2569 =====
+ * คำนวณคะแนนปี/เกรดใน FinalResults ใหม่ทั้งหมดด้วยกฎการปัดล่าสุด (ทศนิยม 2 ตำแหน่ง ตัดเกรดตามค่าที่แสดง)
+ * ใช้กับวิชา/ห้อง/ปีที่ "ส่งผลการเรียนครบทั้ง 2 ภาคเรียน" และมีแถวใน FinalResults อยู่แล้วเท่านั้น (ไม่สร้างผลใหม่ให้วิชาที่ยังส่งไม่ครบ)
+ * วิธีใช้: เปิด Apps Script Editor > เลือกฟังก์ชัน recomputeAllFinalResultsWithRounding > กด Run > ดูผลที่ View > Logs
+ */
+function recomputeAllFinalResultsWithRounding() {
+  const finalRows = getSheetData("FinalResults");
+  const assignments = getSheetData("TeachingAssignments");
+  const done = {};
+  let recomputed = 0;
+  let skipped = 0;
+
+  finalRows.forEach((r) => {
+    const key = [r.SubjectID, r.AcademicYearID, r.ClassID].join("|");
+    if (done[key]) return;
+    done[key] = true;
+
+    const teacher = assignments.find(
+      (a) =>
+        String(a.SubjectID) === String(r.SubjectID) &&
+        String(a.AcademicYearID) === String(r.AcademicYearID) &&
+        String(a.ClassID) === String(r.ClassID)
+    );
+    if (!teacher) {
+      skipped++;
+      Logger.log("ข้าม (ไม่พบครูผู้สอนที่มอบหมาย): " + key);
+      return;
+    }
+    syncFinalResultsForYear(r.SubjectID, r.AcademicYearID, r.ClassID, teacher.TeacherUserID);
+    recomputed++;
+  });
+
+  Logger.log("คำนวณใหม่แล้ว " + recomputed + " ชุด (วิชา/ห้อง/ปี) ข้าม " + skipped + " ชุด");
 }
