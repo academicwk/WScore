@@ -114,9 +114,10 @@ function renderSetup() {
               .map(
                 (sc) => `
       <div class="flex items-center justify-between border-b border-gray-100 py-2 text-sm">
-        <span class="text-gray-700">${sc.subComponentName}</span>
+        <span class="text-gray-700" data-sub-name="${sc.subComponentId}">${sc.subComponentName}</span>
         <div class="flex items-center gap-3">
           <span class="text-gray-500">${sc.maxScore} คะแนน</span>
+          <button onclick="renameSubComponent('${sc.subComponentId}')" class="text-wprimary hover:underline text-xs">แก้ชื่อ</button>
           <button onclick="removeSubComponent('${sc.subComponentId}')" class="text-red-500 hover:underline text-xs">ลบ</button>
         </div>
       </div>`
@@ -177,25 +178,73 @@ async function handleSubmitSubComponent(e) {
   }
 }
 
-async function removeSubComponent(subComponentId) {
-  const confirmResult = await Swal.fire({
-    icon: "warning",
-    title: "ยืนยันการลบ",
-    text: "ต้องการลบช่องเก็บคะแนนนี้ใช่หรือไม่ คะแนนที่กรอกไว้ในช่องนี้จะหายไปด้วย",
+// แก้ไขชื่อช่องเก็บคะแนน (เฉพาะชื่อ ไม่กระทบคะแนนที่บันทึกไว้)
+async function renameSubComponent(subComponentId) {
+  const nameEl = document.querySelector(`[data-sub-name="${CSS.escape(String(subComponentId))}"]`);
+  const currentName = nameEl ? nameEl.textContent : "";
+
+  const input = await Swal.fire({
+    title: "แก้ไขชื่อช่องเก็บคะแนน",
+    input: "text",
+    inputValue: currentName,
+    inputAttributes: { maxlength: 100 },
     showCancelButton: true,
-    confirmButtonText: "ลบ",
+    confirmButtonText: "บันทึก",
     cancelButtonText: "ยกเลิก",
-    confirmButtonColor: "#d33",
+    confirmButtonColor: "#268244",
+    inputValidator: (v) => (!String(v || "").trim() ? "กรุณาระบุชื่อช่องเก็บคะแนน" : undefined),
   });
+  if (!input.isConfirmed) return;
 
-  if (!confirmResult.isConfirmed) return;
+  const newName = String(input.value).trim();
+  if (newName === currentName) return;
 
-  const result = await callApi("deleteGradeSubComponent", { subComponentId });
+  try {
+    const result = await callApi("updateGradeSubComponent", { subComponentId, subComponentName: newName });
+    if (result.status === "success") {
+      await loadSetupIfReady();
+      Swal.fire({ icon: "success", title: "แก้ไขชื่อสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+    } else {
+      Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+    }
+  } catch (err) {
+    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
+  }
+}
 
-  if (result.status === "success") {
-    await loadSetupIfReady();
-    Swal.fire({ icon: "success", title: "ลบสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
-  } else {
-    Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+// ลบช่องเก็บคะแนน: ถ้ามีคะแนนบันทึกไว้แล้ว Server จะบอกจำนวนที่กระทบ ต้องยืนยันอีกครั้งจึงลบจริง
+async function removeSubComponent(subComponentId) {
+  try {
+    let result = await callApi("deleteGradeSubComponent", { subComponentId });
+
+    if (result.status === "needs_confirm") {
+      const d = result.data || {};
+      const classNote =
+        d.classCount > 1
+          ? `<br><b>กระทบ ${d.classCount} ห้องเรียน</b> เพราะช่องเก็บคะแนนใช้ร่วมกันทุกห้องที่เรียนวิชานี้`
+          : "";
+      const confirmResult = await Swal.fire({
+        icon: "warning",
+        title: "ช่องนี้มีคะแนนที่บันทึกไว้แล้ว",
+        html: `การลบจะ <b>ลบคะแนนของนักเรียน ${d.studentCount} คน (${d.scoreCount} รายการ) ออกถาวร</b> และคะแนนหน่วยของทุกคนจะถูกคำนวณใหม่${classNote}<br><br>ต้องการลบหรือไม่`,
+        showCancelButton: true,
+        confirmButtonText: "ลบช่องและคะแนน",
+        cancelButtonText: "ยกเลิก",
+        confirmButtonColor: "#d33",
+      });
+      if (!confirmResult.isConfirmed) return;
+      result = await callApi("deleteGradeSubComponent", { subComponentId, force: true });
+    } else if (result.status === "success") {
+      // ไม่มีคะแนนในช่องนี้ ลบได้ทันที (ยังขอยืนยันแบบเดิมไม่ได้แล้วเพราะลบสำเร็จไปแล้ว จึงแจ้งผลเท่านั้น)
+    }
+
+    if (result.status === "success") {
+      await loadSetupIfReady();
+      Swal.fire({ icon: "success", title: "ลบสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
+    } else {
+      Swal.fire({ icon: "error", title: "ไม่สำเร็จ", text: result.message, confirmButtonColor: "#268244" });
+    }
+  } catch (err) {
+    Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
   }
 }

@@ -231,7 +231,18 @@ function computeScaledExamScore30(studentId) {
 // คะแนนสรุปภาคเรียน (เต็ม 100 เสมอ) = คะแนนระหว่างภาคที่แปลงเป็นฐาน 70 + คะแนนปลายภาคที่แปลงเป็นฐาน 30
 // (สอดคล้องกับสูตรฝั่ง Server ใน computeSemesterScores() ของ Code.gs)
 function computeRowTotal(studentId) {
-  return computeScaledUnitsScore70(studentId) + computeScaledExamScore30(studentId);
+  // รวม = ระหว่างภาค (ปัด 2 ตำแหน่ง) + ปลายภาค (ปัด 2 ตำแหน่ง) ตรงกับ Server (computeSemesterScores) และเป็นค่าที่ใช้ตัดเกรด
+  return (scoreCents(computeScaledUnitsScore70(studentId)) + scoreCents(computeScaledExamScore30(studentId))) / 100;
+}
+
+// ปัดเป็นสตางค์ (ปัดขึ้นเมื่อ .5 พอดี) ต้องเหมือน toScoreCents() ใน Code.gs
+function scoreCents(x) {
+  return Math.round(Number(x) * 100 + 1e-6);
+}
+
+// แสดงคะแนน 2 ตำแหน่งด้วยกฎปัดเดียวกับ Server (แทน toFixed ที่ปัดตามค่าไบนารี่)
+function fmtScore2(x) {
+  return (scoreCents(x) / 100).toFixed(2);
 }
 
 // สีพื้นหลังของช่องกรอกคะแนน: ยังไม่กรอก = เหลืองอ่อน, กรอกแล้วต่ำกว่า 6 = แดงอ่อน, กรอกแล้ว 6 ขึ้นไป = เขียวอ่อน
@@ -315,9 +326,9 @@ function renderEntryTable() {
                  data-si="${si}" data-ci="${ci}"
                  data-student-id="${st.studentId}" data-component-id="${c.componentId}" data-sub-component-id="${c.subComponentId}"
                  value="${val === undefined ? "" : val}"
-                 oninput="onScoreInput(this)" ${isEntryLocked ? "disabled" : ""}
+                 oninput="onScoreInput(this)" ${isEntryLocked || st.isActive === false ? "disabled" : ""}
                  class="score-input w-16 text-center border border-gray-300 rounded-lg px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30 ${
-                   isEntryLocked ? "opacity-60 cursor-not-allowed" : ""
+                   isEntryLocked || st.isActive === false ? "opacity-60 cursor-not-allowed" : ""
                  }">
         </td>`;
         })
@@ -329,31 +340,31 @@ function renderEntryTable() {
         ${formatUnitRaw(activeComp, st.studentId)}
       </td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary" data-unit-for="${st.studentId}">
-        ${computeUnitScore(activeComp, st.studentId).toFixed(2)}
+        ${fmtScore2(computeUnitScore(activeComp, st.studentId))}
       </td>`
         : "";
 
       const allUnitsScoreHtml = isFinalTab
         ? `
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-allunitsscore-for="${st.studentId}">
-        ${computeAllUnitsScore(st.studentId).toFixed(2)}
+        ${fmtScore2(computeAllUnitsScore(st.studentId))}
       </td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-scaledunits70-for="${st.studentId}">
-        ${computeScaledUnitsScore70(st.studentId).toFixed(2)}
+        ${fmtScore2(computeScaledUnitsScore70(st.studentId))}
       </td>`
         : "";
 
       const totalHtml = isFinalTab
         ? `
       <td class="px-3 py-2 text-center font-semibold text-wprimary row-total border-l-2 border-b-2 border-gray-400" data-total-for="${st.studentId}">
-        ${computeRowTotal(st.studentId).toFixed(2)}
+        ${fmtScore2(computeRowTotal(st.studentId))}
       </td>`
         : "";
 
       return `
     <tr class="${si % 2 === 0 ? "bg-sky-200" : "bg-slate-300"}" data-row-student="${st.studentId}">
       <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap border-b-2 border-gray-400">${st.studentNumber}</td>
-      <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-b-2 border-gray-400">${st.fullName}</td>
+      <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-b-2 border-gray-400">${st.fullName}${st.isActive === false ? `<span class="ml-2 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">${String(st.studentStatus || "ไม่ได้กำลังศึกษา").replace(/[<>&"]/g, "")}</span>` : ""}</td>
       ${allUnitsScoreHtml}
       ${cellsHtml}
       ${unitSummaryHtml}
@@ -452,19 +463,19 @@ function onScoreInput(input) {
     if (rawCell) rawCell.textContent = formatUnitRaw(activeComp, studentId);
 
     const unitCell = document.querySelector(`[data-unit-for="${studentId}"]`);
-    if (unitCell) unitCell.textContent = computeUnitScore(activeComp, studentId).toFixed(2);
+    if (unitCell) unitCell.textContent = fmtScore2(computeUnitScore(activeComp, studentId));
   }
 
   if (activeComp && activeComp.componentType === "ปลายภาค") {
     // แท็บปลายภาค: อัปเดตคะแนนจริงทุกหน่วย + คะแนนระหว่างภาค (70) + คะแนนสรุปภาคเรียน (100)
     const allUnitsScoreCell = document.querySelector(`[data-allunitsscore-for="${studentId}"]`);
-    if (allUnitsScoreCell) allUnitsScoreCell.textContent = computeAllUnitsScore(studentId).toFixed(2);
+    if (allUnitsScoreCell) allUnitsScoreCell.textContent = fmtScore2(computeAllUnitsScore(studentId));
 
     const scaledUnitsCell = document.querySelector(`[data-scaledunits70-for="${studentId}"]`);
-    if (scaledUnitsCell) scaledUnitsCell.textContent = computeScaledUnitsScore70(studentId).toFixed(2);
+    if (scaledUnitsCell) scaledUnitsCell.textContent = fmtScore2(computeScaledUnitsScore70(studentId));
 
     const totalCell = document.querySelector(`[data-total-for="${studentId}"]`);
-    if (totalCell) totalCell.textContent = computeRowTotal(studentId).toFixed(2);
+    if (totalCell) totalCell.textContent = fmtScore2(computeRowTotal(studentId));
   }
 }
 
@@ -487,7 +498,7 @@ function handleGridPaste(e) {
       const si = startSi + rOffset;
       const ci = startCi + cOffset;
       const cellInput = document.querySelector(`input[data-si="${si}"][data-ci="${ci}"]`);
-      if (cellInput) {
+      if (cellInput && !cellInput.disabled) {
         cellInput.value = cellText.trim();
         onScoreInput(cellInput);
       }
@@ -505,6 +516,7 @@ async function saveAllScores() {
   const scores = [];
 
   currentStudents.forEach((st) => {
+    if (st.isActive === false) return; // ไม่ได้ "กำลังศึกษา" ถูกล็อก ไม่ส่งไปบันทึก (ฝั่ง Server ปฏิเสธอยู่แล้ว)
     cols.forEach((c) => {
       const val = currentScores[scoreKey(st.studentId, c.componentId, c.subComponentId)];
       if (val !== undefined && val !== null && val !== "") {
