@@ -381,6 +381,38 @@ function getSheetData(sheetName) {
 }
 
 /**
+ * อ่านเฉพาะ "คอลัมน์ที่ระบุ" ของชีต (เร็วกว่า getSheetData มากกับชีตใหญ่ เช่น StudentScores ที่ไม่ต้องใช้คอลัมน์ Score/วันที่)
+ * คืนค่าเป็น array ของ object ที่มีเฉพาะคอลัมน์ที่ขอ (8 ต.ค. 2569)
+ */
+function getSheetColumnsData(sheetName, columnNames) {
+  const sheet = SS.getSheetByName(sheetName);
+  if (!sheet) throw new Error("ไม่พบ Sheet ชื่อ: " + sheetName);
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const cols = columnNames.map((name) => {
+    const idx = headers.indexOf(name);
+    if (idx === -1) throw new Error("ไม่พบคอลัมน์ " + name + " ในชีต " + sheetName);
+    return sheet.getRange(2, idx + 1, lastRow - 1, 1).getValues();
+  });
+
+  const out = [];
+  for (let r = 0; r < lastRow - 1; r++) {
+    const obj = {};
+    let hasValue = false;
+    for (let c = 0; c < columnNames.length; c++) {
+      const v = cols[c][r][0];
+      obj[columnNames[c]] = v;
+      if (v !== "" && v !== null) hasValue = true;
+    }
+    if (hasValue) out.push(obj);
+  }
+  return out;
+}
+
+/**
  * เหมือน getSheetData() แต่แคชผลลัพธ์ไว้ใน CacheService ตามเวลาที่กำหนด (วินาที)
  * ใช้กับตารางที่ถูกอ่านซ้ำบ่อยมากในทุก request (เช่น TeachingAssignments, Students, GradeComponents)
  * แต่เปลี่ยนแปลงไม่บ่อย เพื่อลดจำนวนครั้งที่ต้องอ่านทั้งชีตจริง (ตามข้อ 5 ของกฎการเขียนโค้ด เน้นความเร็ว)
@@ -3654,6 +3686,14 @@ function handleGetRegistrarTeacherProgressOverview(body) {
       subjectById[String(a.SubjectID)].SubjectType !== "กิจกรรมพัฒนาผู้เรียน"
   );
   const comboKeys = Array.from(new Set(assignments.map((a) => a.SubjectID + "|" + a.ClassID)));
+  const teacherIdsByCombo = {};
+  assignments.forEach((a) => {
+    const k = a.SubjectID + "|" + a.ClassID;
+    if (!teacherIdsByCombo[k]) teacherIdsByCombo[k] = {};
+    teacherIdsByCombo[k][String(a.TeacherUserID)] = true;
+  });
+  const teacherNameById = {};
+  usersForTeacherName.forEach((u) => (teacherNameById[String(u.UserID)] = u.FullName));
 
   // โครงสร้างช่องเก็บคะแนนของภาคเรียนปัจจุบัน อ่านครั้งเดียว ไม่วนอ่านซ้ำต่อคู่วิชา/ห้อง
   const componentsBySubject = {};
@@ -3674,12 +3714,14 @@ function handleGetRegistrarTeacherProgressOverview(body) {
 
   // คะแนนของภาคเรียนปัจจุบันเฉพาะห้องในขอบเขตที่เลือก อ่านครั้งเดียว แล้วจัดกลุ่มตามคู่วิชา/ห้อง
   const scoresByComboKey = {};
-  getSheetData("StudentScores")
+  const classIdSet = {};
+  classIds.forEach((id) => (classIdSet[id] = true));
+  getSheetColumnsData("StudentScores", ["StudentID", "ClassID", "SubjectID", "AcademicYearID", "Semester", "ComponentID", "SubComponentID"])
     .filter(
       (sc) =>
         String(sc.AcademicYearID) === String(currentYearId) &&
         Number(sc.Semester) === currentSemester &&
-        classIds.indexOf(String(sc.ClassID)) !== -1
+        classIdSet[String(sc.ClassID)] === true
     )
     .forEach((sc) => {
       const key = sc.SubjectID + "|" + sc.ClassID;
@@ -3717,13 +3759,8 @@ function handleGetRegistrarTeacherProgressOverview(body) {
         return sum + (subComponentCountByComponentId[String(c.ComponentID)] || 0);
       }, 0);
 
-      const teacherNames = Array.from(
-        new Set(assignments.filter((a) => String(a.SubjectID) === subjectId && String(a.ClassID) === classId).map((a) => String(a.TeacherUserID)))
-      )
-        .map((uid) => {
-          const u = usersForTeacherName.find((usr) => String(usr.UserID) === uid);
-          return u ? u.FullName : "";
-        })
+      const teacherNames = Object.keys(teacherIdsByCombo[key] || {})
+        .map((uid) => teacherNameById[uid] || "")
         .filter(Boolean)
         .join(", ");
 
