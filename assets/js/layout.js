@@ -212,7 +212,7 @@
 
   async function fetchGradingPeriodStatus() {
     try {
-      const result = await callApi("getGradingPeriodStatus");
+      const result = await callApiCached("getGradingPeriodStatus");
       if (result && result.status === "success") {
         applyGradingPeriodStatus(result.data);
       }

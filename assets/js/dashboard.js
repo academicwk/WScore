@@ -122,6 +122,33 @@ function semesterProgressColumnHtml(semesterLabel, progress, componentsKey, colo
     </div>`;
 }
 
+// ป้ายสถานะการส่งคะแนนรายภาคเรียนของรายวิชา (แสดงในรายการรายวิชาของครูประจำชั้น)
+function semesterBadgeHtml(label, submitted) {
+  return submitted
+    ? `<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700"><i class="fa-solid fa-circle-check"></i>${label} ส่งแล้ว</span>`
+    : `<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700"><i class="fa-solid fa-hourglass-half"></i>${label} ยังไม่ส่ง</span>`;
+}
+
+function submissionStatusHtml(classes) {
+  if (!Array.isArray(classes) || classes.length === 0) return "";
+  const showClass = classes.length > 1;
+  return classes
+    .map(
+      (c) => `
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
+          ${showClass ? `<span class="text-xs text-gray-500">ห้อง ${escapeHtmlText(c.label)}</span>` : ""}
+          ${semesterBadgeHtml("ภาค 1", c.sem1)}
+          ${semesterBadgeHtml("ภาค 2", c.sem2)}
+          ${c.teachers ? `<span class="text-xs text-gray-400"><i class="fa-solid fa-chalkboard-user mr-1"></i>${escapeHtmlText(c.teachers)}</span>` : ""}
+        </div>`
+    )
+    .join("");
+}
+
+function escapeHtmlText(v) {
+  return String(v == null ? "" : v).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+}
+
 // รายการชื่อรายวิชาที่ลงทะเบียนเรียนทั้งหมดของห้อง (data.subjects) แสดงเฉพาะกรณีมีข้อมูลส่งมา (ปัจจุบันมีเฉพาะ HOMEROOM_TEACHER)
 // เรียงลำดับมาจาก backend แล้ว (ตามกลุ่มสาระ) ฝั่งนี้แค่ใส่หัวข้อกลุ่มสาระคั่นเมื่อกลุ่มเปลี่ยน
 function subjectListSectionHtml(subjects) {
@@ -136,9 +163,12 @@ function subjectListSectionHtml(subjects) {
       rowsHtml += `<p class="text-xs font-semibold text-wprimary mt-3 first:mt-0">${groupLabel}</p>`;
     }
     rowsHtml += `
-      <div class="flex items-center justify-between gap-3 py-1.5 border-b border-gray-50 last:border-0">
-        <span class="text-sm text-gray-700">${s.subjectId} ${s.subjectName}</span>
-        <span class="text-xs text-gray-400 whitespace-nowrap">${s.subjectType}</span>
+      <div class="py-2 border-b border-gray-50 last:border-0">
+        <div class="flex items-center justify-between gap-3">
+          <span class="text-sm text-gray-700">${s.subjectId} ${s.subjectName}</span>
+          <span class="text-xs text-gray-400 whitespace-nowrap">${s.subjectType}</span>
+        </div>
+        ${submissionStatusHtml(s.classes)}
       </div>`;
   });
 
