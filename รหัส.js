@@ -106,6 +106,20 @@ const ACTION_ROLES = {
 };
 
 /**
+ * ตรวจว่าข้อมูลที่ส่งมา (ทุกชั้นของ object/array) มีข้อความที่หน้าตาเป็นแท็ก HTML หรือไม่ เช่น <script>, </div>, <img ...>
+ * ข้อความทั่วไปที่มี < หรือ > เช่น "ก < ข" ไม่ถูกบล็อก (ต้องมี < ตามด้วยตัวอักษร / ! ทันที)
+ */
+function containsHtmlTag(value, depth) {
+  if (depth > 6 || value === null || value === undefined) return false;
+  if (typeof value === "string") return /<[a-zA-Z\/!?]/.test(value);
+  if (Array.isArray(value)) return value.some((v) => containsHtmlTag(v, depth + 1));
+  if (typeof value === "object") {
+    return Object.keys(value).some((k) => containsHtmlTag(value[k], depth + 1));
+  }
+  return false;
+}
+
+/**
  * จุดรับคำขอทั้งหมดจากฝั่งเว็บ (POST)
  * body ที่ส่งมาจะมี field "action" เป็นตัวกำหนดว่าจะให้ทำอะไร
  *
@@ -123,6 +137,16 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents);
     const action = body.action;
+
+    // กันการฝังแท็ก HTML/สคริปต์ในข้อมูลที่บันทึก (เช่น ชื่อ, ความเห็น) เพราะหน้าเว็บแสดงข้อมูลผ่าน innerHTML — 8 ต.ค. 2569
+    if (action !== "login" && containsHtmlTag(body, 0)) {
+      return ContentService
+        .createTextOutput(JSON.stringify({
+          status: "error",
+          message: "ข้อมูลมีอักขระที่ไม่อนุญาต (แท็ก HTML เช่น <script>) กรุณาตรวจสอบและลบออกก่อนบันทึก",
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
 
     if (action !== "login") {
       const session = verifySession(body.token);
@@ -378,6 +402,86 @@ function getSheetData(sheetName) {
       });
       return obj;
     });
+}
+
+/**
+ * ค้นหาแถวของ StudentScores ตามเงื่อนไข (เทียบแบบข้อความ) โดยอ่านเฉพาะคอลัมน์ที่ใช้กรองก่อน แล้วค่อยอ่านเฉพาะแถวที่ตรงเงื่อนไข
+ * แทนการอ่านทั้งชีตทุกครั้ง (ชีตคะแนนโตตามจำนวนนักเรียน x วิชา x ช่องคะแนน จึงเป็นตัวถ่วงความเร็วหลัก) — 8 ต.ค. 2569
+ * criteria เช่น { ClassID: "C1", SubjectID: "SB1", AcademicYearID: "AY2569", Semester: 1 }
+ * countOnly = true จะคืนเฉพาะจำนวนแถว (ไม่อ่านแถวจริง) คืนค่ารูปแบบเดียวกับ getSheetData() คือ array ของ object ตามหัวคอลัมน์
+ */
+function getStudentScoresWhere(criteria, countOnly) {
+  const sheet = SS.getSheetByName("StudentScores");
+  if (!sheet) throw new Error("ไม่พบ Sheet ชื่อ: StudentScores");
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return countOnly ? 0 : [];
+
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const keys = Object.keys(criteria);
+  const keyCols = keys.map((k) => {
+    const idx = headers.indexOf(k);
+    if (idx === -1) throw new Error("ไม่พบคอลัมน์ " + k + " ในชีต StudentScores");
+    return sheet.getRange(2, idx + 1, lastRow - 1, 1).getValues();
+  });
+
+  const wanted = keys.map((k) => String(criteria[k]));
+  const matchedRows = []; // เลขแถวจริงในชีต
+  for (let r = 0; r < lastRow - 1; r++) {
+    let ok = true;
+    for (let c = 0; c < keys.length; c++) {
+      if (String(keyCols[c][r][0]) !== wanted[c]) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) matchedRows.push(r + 2);
+  }
+  if (countOnly) return matchedRows.length;
+  if (matchedRows.length === 0) return [];
+
+  // รวมแถวที่ติดกันเป็นช่วง อ่านครั้งละช่วง (ถ้ากระจัดกระจายมากเกินไปจะอ่านทั้งก้อนครั้งเดียวแทน เพื่อไม่ให้เรียก API มากเกิน)
+  const runs = [];
+  let start = matchedRows[0];
+  let prev = start;
+  for (let i = 1; i < matchedRows.length; i++) {
+    if (matchedRows[i] === prev + 1) {
+      prev = matchedRows[i];
+    } else {
+      runs.push([start, prev]);
+      start = matchedRows[i];
+      prev = start;
+    }
+  }
+  runs.push([start, prev]);
+
+  const toObj = (row) => {
+    const obj = {};
+    headers.forEach((h, i) => (obj[h] = row[i]));
+    return obj;
+  };
+
+  if (runs.length > 60) {
+    const first = matchedRows[0];
+    const last = matchedRows[matchedRows.length - 1];
+    const block = sheet.getRange(first, 1, last - first + 1, lastCol).getValues();
+    const matchedSet = {};
+    matchedRows.forEach((n) => (matchedSet[n] = true));
+    const out = [];
+    block.forEach((row, i) => {
+      if (matchedSet[first + i] === true) out.push(toObj(row));
+    });
+    return out;
+  }
+
+  const out = [];
+  runs.forEach((run) => {
+    sheet
+      .getRange(run[0], 1, run[1] - run[0] + 1, lastCol)
+      .getValues()
+      .forEach((row) => out.push(toObj(row)));
+  });
+  return out;
 }
 
 /**
@@ -941,7 +1045,7 @@ function handleDeleteSubject(body) {
   if (!force) {
     const assignmentCount = getSheetData("TeachingAssignments").filter((a) => String(a.SubjectID) === String(subjectId)).length;
     const componentCount = getSheetData("GradeComponents").filter((c) => String(c.SubjectID) === String(subjectId)).length;
-    const scoreCount = getSheetData("StudentScores").filter((s) => String(s.SubjectID) === String(subjectId)).length;
+    const scoreCount = getStudentScoresWhere({ SubjectID: subjectId }, true);
     const finalResultCount = getSheetData("FinalResults").filter((r) => String(r.SubjectID) === String(subjectId)).length;
 
     if (assignmentCount > 0 || componentCount > 0 || scoreCount > 0 || finalResultCount > 0) {
@@ -1072,7 +1176,7 @@ function handleDeleteStudent(body) {
 
   if (!force) {
     const enrollmentCount = getSheetData("StudentEnrollments").filter((e) => String(e.StudentID) === String(studentId)).length;
-    const scoreCount = getSheetData("StudentScores").filter((s) => String(s.StudentID) === String(studentId)).length;
+    const scoreCount = getStudentScoresWhere({ StudentID: studentId }, true);
     const finalResultCount = getSheetData("FinalResults").filter((r) => String(r.StudentID) === String(studentId)).length;
 
     if (enrollmentCount > 0 || scoreCount > 0 || finalResultCount > 0) {
@@ -1131,6 +1235,11 @@ function handleGetDashboardData(body) {
   const role = body.role;
   const userId = body.userId;
 
+  // role มาจากฝั่งหน้าเว็บ จึงต้องตรวจซ้ำว่าผู้ใช้คนนี้มีบทบาทนี้จริง ไม่เช่นนั้นจะขอข้อมูลสรุปของบทบาทอื่นได้ (8 ต.ค. 2569)
+  if (!role || !hasAnyRole(userId, [role])) {
+    return { status: "error", message: "คุณไม่มีสิทธิ์ดูข้อมูลของบทบาทนี้" };
+  }
+
   if (role === "SUBJECT_TEACHER") {
     const dashboardCacheKey = "dashboard_SUBJECT_TEACHER_" + userId;
     const dashboardCache = CacheService.getScriptCache();
@@ -1161,7 +1270,7 @@ function handleGetDashboardData(body) {
     const allSubComponents = getCachedSheetData("GradeSubComponents", 60);
     const allEnrollments = getActiveEnrollments();
     // คะแนนและสถานะส่งผลการเรียนต้องอ่านสดเสมอ เพื่อให้ % ความคืบหน้าและสถานะส่งผลตรงกับความเป็นจริงเสมอ
-    const allScores = getSheetData("StudentScores");
+    const allScores = getSheetColumnsData("StudentScores", ["ClassID", "ComponentID", "SubComponentID", "StudentID"]);
     const allSemesterSubmissions = getSheetData("SemesterSubmissions");
     const validCellsDash = getValidScoreCellSet();
     const activeIdsDash = getActiveStudentIdSet();
@@ -1671,7 +1780,9 @@ function computeSemesterResultForStudent(subjectId, academicYearId, classId, sem
     return Object.assign({}, c, { componentId: c.ComponentID, maxScore: c.MaxScore, subComponents: subComponents });
   });
 
-  const scoresSource = scoresForStudentPreloaded || getSheetData("StudentScores");
+  const scoresSource =
+    scoresForStudentPreloaded ||
+    getStudentScoresWhere({ ClassID: classId, SubjectID: subjectId, AcademicYearID: academicYearId, Semester: semester });
   const scoresForStudent = scoresSource.filter(
     (sc) =>
       String(sc.ClassID) === String(classId) &&
@@ -1788,9 +1899,7 @@ function buildPt06ReportCore(cls, studentId, preloaded) {
   const studentScores = (
     preloaded && preloaded.studentScoresByClass
       ? preloaded.studentScoresByClass.filter((sc) => String(sc.StudentID) === String(studentId))
-      : getSheetData("StudentScores").filter(
-          (sc) => String(sc.ClassID) === String(classId) && String(sc.StudentID) === String(studentId)
-        )
+      : getStudentScoresWhere({ ClassID: classId, StudentID: studentId })
   );
 
   let subjectRows = assignedSubjectIds
@@ -2393,7 +2502,7 @@ function handleGenerateHomeroomClassReport(body) {
     students: getSheetData("Students"),
     finalResultsByClass: getFinalResultsByClass(classId, currentYearIdPreload),
     activityResultsByClass: getSheetData("ActivityResults").filter((r) => String(r.ClassID) === String(classId)),
-    studentScoresByClass: getSheetData("StudentScores").filter((sc) => String(sc.ClassID) === String(classId)),
+    studentScoresByClass: getStudentScoresWhere({ ClassID: classId }),
   };
 
   const perStudent = [];
@@ -2588,7 +2697,7 @@ function handleGeneratePt06ClassReport(body) {
         students: getSheetData("Students"),
         finalResultsByClass: getFinalResultsByClass(classId, clsForPreload.AcademicYearID),
         activityResultsByClass: getSheetData("ActivityResults").filter((r) => String(r.ClassID) === String(classId)),
-        studentScoresByClass: getSheetData("StudentScores").filter((sc) => String(sc.ClassID) === String(classId)),
+        studentScoresByClass: getStudentScoresWhere({ ClassID: classId }),
       }
     : null;
 
@@ -3894,13 +4003,12 @@ function handleGetTeacherProgressDetail(body) {
 
   const enrollments = getActiveEnrollments().filter((e) => String(e.ClassID) === String(classId));
   const allStudents = getCachedSheetData("Students", 120);
-  const scores = getSheetData("StudentScores").filter(
-    (sc) =>
-      String(sc.ClassID) === String(classId) &&
-      String(sc.SubjectID) === String(subjectId) &&
-      String(sc.AcademicYearID) === String(currentYearId) &&
-      Number(sc.Semester) === currentSemester
-  );
+  const scores = getStudentScoresWhere({
+    ClassID: classId,
+    SubjectID: subjectId,
+    AcademicYearID: currentYearId,
+    Semester: currentSemester,
+  });
 
   const students = enrollments
     .map((e) => {
@@ -4074,7 +4182,7 @@ function handleDeleteClass(body) {
   if (!force) {
     const enrollmentCount = getSheetData("StudentEnrollments").filter((e) => String(e.ClassID) === String(classId)).length;
     const assignmentCount = getSheetData("TeachingAssignments").filter((a) => String(a.ClassID) === String(classId)).length;
-    const scoreCount = getSheetData("StudentScores").filter((s) => String(s.ClassID) === String(classId)).length;
+    const scoreCount = getStudentScoresWhere({ ClassID: classId }, true);
     const finalResultCount = getSheetData("FinalResults").filter((r) => String(r.ClassID) === String(classId)).length;
 
     if (enrollmentCount > 0 || assignmentCount > 0 || scoreCount > 0 || finalResultCount > 0) {
@@ -4621,12 +4729,10 @@ function handleUpdateTeachingAssignment(body) {
       String(original.AcademicYearID) !== String(academicYearId);
 
     if (scopeChanged && !force) {
-      const scoreCount = getSheetData("StudentScores").filter(
-        (s) =>
-          String(s.ClassID) === String(original.ClassID) &&
-          String(s.SubjectID) === String(original.SubjectID) &&
-          String(s.AcademicYearID) === String(original.AcademicYearID)
-      ).length;
+      const scoreCount = getStudentScoresWhere(
+        { ClassID: original.ClassID, SubjectID: original.SubjectID, AcademicYearID: original.AcademicYearID },
+        true
+      );
 
       if (scoreCount > 0) {
         return {
@@ -4675,12 +4781,10 @@ function handleDeleteTeachingAssignment(body) {
     }
 
     if (!force) {
-      const scoreCount = getSheetData("StudentScores").filter(
-        (s) =>
-          String(s.ClassID) === String(target.ClassID) &&
-          String(s.SubjectID) === String(target.SubjectID) &&
-          String(s.AcademicYearID) === String(target.AcademicYearID)
-      ).length;
+      const scoreCount = getStudentScoresWhere(
+        { ClassID: target.ClassID, SubjectID: target.SubjectID, AcademicYearID: target.AcademicYearID },
+        true
+      );
 
       if (scoreCount > 0) {
         return {
@@ -5024,9 +5128,7 @@ function handleDeleteGradeSubComponent(body) {
 
   // ยังไม่ยืนยัน: นับจำนวนคะแนนที่จะหายไปให้ครูเห็นก่อน (อ่านสด เพราะเป็นข้อมูลที่ครูเพิ่งกรอก)
   if (!force) {
-    const affected = getSheetData("StudentScores").filter(
-      (sc) => String(sc.SubComponentID) === String(subComponentId)
-    );
+    const affected = getStudentScoresWhere({ SubComponentID: subComponentId });
     if (affected.length > 0) {
       const studentSet = {};
       const classSet = {};
@@ -5147,13 +5249,12 @@ function handleGetGradeEntryPageData(body) {
     .sort((a, b) => Number(a.studentNumber) - Number(b.studentNumber));
 
   // คะแนนต้องอ่านสด ห้ามแคช เพราะเป็นข้อมูลที่ครูกำลังแก้ไข/ต้องเห็นค่าล่าสุดเสมอ
-  const scores = getSheetData("StudentScores").filter(
-    (s) =>
-      String(s.ClassID) === String(classId) &&
-      String(s.SubjectID) === String(subjectId) &&
-      String(s.AcademicYearID) === String(academicYearId) &&
-      Number(s.Semester) === semester
-  );
+  const scores = getStudentScoresWhere({
+    ClassID: classId,
+    SubjectID: subjectId,
+    AcademicYearID: academicYearId,
+    Semester: semester,
+  });
 
   // เช็คว่า "ภาคเรียนนี้" ของวิชา/ห้องนี้ถูกส่งผลการเรียนไปแล้วหรือยัง (แยกเช็คเป็นรายภาคเรียน)
   // ถ้าส่งไปแล้ว หน้าเว็บจะล็อกการแก้ไขคะแนนของภาคเรียนนี้ เพื่อไม่ให้ผลการเรียนที่ส่งไปเพี้ยนไปจากคะแนนจริง
@@ -5327,7 +5428,7 @@ function handleSaveStudentScores(body) {
 
     // เพิ่มแถวใหม่ (คะแนนที่ยังไม่เคยมีมาก่อน)
     if (rowsToAppend.length > 0) {
-      const allScoreIds = getSheetData("StudentScores");
+      const allScoreIds = getSheetColumnsData("StudentScores", ["ScoreID"]);
       const maxNum = allScoreIds.reduce((max, sc) => {
         const match = String(sc.ScoreID || "").match(/^SCR(\d+)$/);
         return match ? Math.max(max, Number(match[1])) : max;
@@ -5810,12 +5911,7 @@ function buildFinalizeData(subjectId, academicYearId, classId, userId) {
     .filter(Boolean)
     .sort((a, b) => Number(a.studentNumber) - Number(b.studentNumber));
 
-  const allScores = getSheetData("StudentScores").filter(
-    (sc) =>
-      String(sc.ClassID) === String(classId) &&
-      String(sc.SubjectID) === String(subjectId) &&
-      String(sc.AcademicYearID) === String(academicYearId)
-  );
+  const allScores = getStudentScoresWhere({ ClassID: classId, SubjectID: subjectId, AcademicYearID: academicYearId });
 
   const scoresMap1 = {};
   const scoresMap2 = {};
@@ -5881,13 +5977,7 @@ function buildSemester1OnlyData(subjectId, academicYearId, classId, userId) {
     .filter(Boolean)
     .sort((a, b) => Number(a.studentNumber) - Number(b.studentNumber));
 
-  const allScores = getSheetData("StudentScores").filter(
-    (sc) =>
-      String(sc.ClassID) === String(classId) &&
-      String(sc.SubjectID) === String(subjectId) &&
-      String(sc.AcademicYearID) === String(academicYearId) &&
-      String(sc.Semester) === "1"
-  );
+  const allScores = getStudentScoresWhere({ ClassID: classId, SubjectID: subjectId, AcademicYearID: academicYearId, Semester: 1 });
 
   const scoresMap1 = {};
   allScores.forEach((sc) => {
@@ -5977,13 +6067,12 @@ function getMissingScoreStudents(subjectId, academicYearId, classId, semester) {
     subComponentsByComponentId[key].push(sc);
   });
 
-  const scores = getSheetData("StudentScores").filter(
-    (sc) =>
-      String(sc.ClassID) === String(classId) &&
-      String(sc.SubjectID) === String(subjectId) &&
-      String(sc.AcademicYearID) === String(academicYearId) &&
-      Number(sc.Semester) === Number(semester)
-  );
+  const scores = getStudentScoresWhere({
+    ClassID: classId,
+    SubjectID: subjectId,
+    AcademicYearID: academicYearId,
+    Semester: Number(semester),
+  });
 
   const missing = [];
   enrollments.forEach((e) => {
@@ -6293,9 +6382,13 @@ function handleGenerateSubjectReport(body) {
   let scorePanelRows = null;
 
   if (reportScope === "full") {
-    midtermValues = students.map((st) => (Number(st.semester1Raw70) + Number(st.semester2Raw70)) / 2);
-    finalExamValues = students.map((st) => (Number(st.semester1Exam30) + Number(st.semester2Exam30)) / 2);
-    yearTotalValues = students.map((st) => Number(st.yearScore100));
+    // ใช้กฎปัดเดียวกับตอนส่งผลการเรียน (computeYearScores) เพื่อให้ ระหว่างภาค + ปลายภาค = รวม พอดีเสมอ (8 ต.ค. 2569)
+    const yearScoresList = students.map((st) =>
+      computeYearScores(st.semester1Raw70, st.semester1Exam30, st.semester2Raw70, st.semester2Exam30)
+    );
+    midtermValues = yearScoresList.map((y) => y.raw70);
+    finalExamValues = yearScoresList.map((y) => y.exam30);
+    yearTotalValues = yearScoresList.map((y) => y.total100);
 
     scorePanelRows = {
       sum: [midtermValues, finalExamValues, yearTotalValues].map((arr) => round2(sumOf(arr))),
@@ -6503,9 +6596,70 @@ function recomputeAllFinalResultsWithRounding() {
       Logger.log("ข้าม (ไม่พบครูผู้สอนที่มอบหมาย): " + key);
       return;
     }
-    syncFinalResultsForYear(r.SubjectID, r.AcademicYearID, r.ClassID, teacher.TeacherUserID);
-    recomputed++;
+    // ขอ lock ทีละชุด (ใช้ lock เดียวกับตอนส่ง/ถอนผลการเรียน) กันชนกับครูที่กำลังส่งผลอยู่
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(20000)) {
+      skipped++;
+      Logger.log("ข้าม (ระบบกำลังถูกใช้งาน ขอ lock ไม่ได้): " + key + " — รันฟังก์ชันนี้ซ้ำอีกครั้งได้");
+      return;
+    }
+    try {
+      syncFinalResultsForYear(r.SubjectID, r.AcademicYearID, r.ClassID, teacher.TeacherUserID);
+      recomputed++;
+    } finally {
+      lock.releaseLock();
+    }
   });
 
   Logger.log("คำนวณใหม่แล้ว " + recomputed + " ชุด (วิชา/ห้อง/ปี) ข้าม " + skipped + " ชุด");
+}
+
+/**
+ * ===== ล้างเซสชันที่หมดอายุ (8 ต.ค. 2569) =====
+ * ชีต Sessions เพิ่มแถวทุกครั้งที่ login แต่แถวหมดอายุจะถูกลบเฉพาะเมื่อมีคนใช้ token นั้นอีกครั้ง ทำให้ชีตโตขึ้นเรื่อยๆ
+ * และ verifySession ต้องอ่านทั้งชีตทุกครั้งที่แคชหมด -> ฟังก์ชันนี้ลบแถวที่หมดอายุทิ้งทั้งหมดในครั้งเดียว
+ * ตั้งให้รันอัตโนมัติวันละครั้งด้วย setupSessionCleanupTrigger() (รันมือครั้งเดียว)
+ */
+function cleanupExpiredSessions() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(20000)) {
+    Logger.log("ขอ lock ไม่ได้ ข้ามรอบนี้");
+    return;
+  }
+  try {
+    const sheet = SS.getSheetByName("Sessions");
+    if (!sheet) return;
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return;
+
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const expIdx = headers.indexOf("ExpiresAt");
+    if (expIdx === -1) throw new Error("ไม่พบคอลัมน์ ExpiresAt ในชีต Sessions");
+
+    const expValues = sheet.getRange(2, expIdx + 1, lastRow - 1, 1).getValues();
+    const now = Date.now();
+    const rowsToDelete = [];
+    expValues.forEach((row, i) => {
+      const t = new Date(row[0]).getTime();
+      if (isNaN(t) || t < now) rowsToDelete.push(i + 2);
+    });
+
+    if (rowsToDelete.length > 0) deleteSheetRowsDescending(sheet, rowsToDelete);
+    Logger.log("ลบเซสชันที่หมดอายุแล้ว " + rowsToDelete.length + " รายการ");
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * รันมือครั้งเดียวจาก Apps Script Editor เพื่อตั้งให้ cleanupExpiredSessions() ทำงานอัตโนมัติทุกวันเวลาตี 3 (ไม่สร้างซ้ำถ้ามีอยู่แล้ว)
+ */
+function setupSessionCleanupTrigger() {
+  const exists = ScriptApp.getProjectTriggers().some((t) => t.getHandlerFunction() === "cleanupExpiredSessions");
+  if (exists) {
+    Logger.log("มี trigger ล้างเซสชันอยู่แล้ว ไม่สร้างซ้ำ");
+    return;
+  }
+  ScriptApp.newTrigger("cleanupExpiredSessions").timeBased().everyDays(1).atHour(3).create();
+  Logger.log("ตั้ง trigger ล้างเซสชันรายวัน (ตี 3) เรียบร้อย");
 }
