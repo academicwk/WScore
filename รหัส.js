@@ -3934,6 +3934,13 @@ function handleGetRegistrarTeacherProgressOverview(body) {
     });
 
   const STATUS_PRIORITY = { not_started: 0, in_progress: 1, complete: 2 };
+  // วิชา x ห้อง ที่ครูกด "ส่งผลการเรียน" ของภาคเรียนปัจจุบันแล้ว (อ่านครั้งเดียว) — 8 ต.ค. 2569
+  const submittedComboSet = {};
+  getCachedSheetData("SemesterSubmissions", 60).forEach((r) => {
+    if (String(r.AcademicYearID) === String(currentYearId) && Number(r.Semester) === Number(currentSemester)) {
+      submittedComboSet[String(r.SubjectID) + "|" + String(r.ClassID)] = true;
+    }
+  });
 
   const rows = comboKeys
     .map((key) => {
@@ -3998,6 +4005,7 @@ function handleGetRegistrarTeacherProgressOverview(body) {
         completeCount: completeCount,
         percent: percent,
         status: status,
+        submitted: submittedComboSet[subjectId + "|" + classId] === true,        
       };
     })
     .filter(Boolean)
