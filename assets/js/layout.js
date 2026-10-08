@@ -46,21 +46,24 @@
            </span>`;
 
     document.getElementById("app-header").innerHTML = `
-      <header class="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 z-30 flex items-center justify-between px-4 lg:px-6">
-        <div class="flex items-center gap-3">
-          <button id="sidebarToggle" class="lg:hidden text-wsecondary text-xl">
+      <header class="fixed top-0 left-0 right-0 h-16 bg-white border-b border-gray-200 z-30 flex items-center justify-between gap-2 px-3 sm:px-4 lg:px-6">
+        <div class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+          <button id="sidebarToggle" class="lg:hidden text-wsecondary text-xl shrink-0">
             <i class="fa-solid fa-bars"></i>
           </button>
-          <img src="assets/img/logo.png" alt="W-Score" class="h-auto w-28 object-contain">
-          <span class="hidden sm:inline text-wsecondary font-bold text-lg">ระบบบริหารจัดการวัดและประเมินผลการเรียนรู้<br>โรงเรียนเทศบาลวัดโขดทิมทาราม</span>
+          <img src="assets/img/logo.png" alt="W-Score" class="h-auto w-20 sm:w-24 xl:w-28 object-contain shrink-0">
+          <span class="hidden md:block min-w-0 text-wsecondary font-bold leading-tight text-xs lg:text-sm 2xl:text-lg">
+            <span class="block truncate">ระบบบริหารจัดการวัดและประเมินผลการเรียนรู้</span>
+            <span class="block truncate">โรงเรียนเทศบาลวัดโขดทิมทาราม</span>
+          </span>
         </div>
-        <div class="flex items-center gap-2 sm:gap-4">
-          <div id="gradingCountdown" class="hidden items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 whitespace-nowrap">
-            <i class="fa-solid fa-clock"></i>
-            <span id="gradingCountdownText">-</span>
+        <div class="flex items-center gap-2 sm:gap-3 xl:gap-4 shrink-0">
+          <div id="gradingCountdown" class="hidden items-center gap-1.5 text-[11px] xl:text-xs font-medium px-2 xl:px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-500 whitespace-nowrap max-w-[140px] sm:max-w-[220px] xl:max-w-none overflow-hidden">
+            <i class="fa-solid fa-clock shrink-0"></i>
+            <span id="gradingCountdownText" class="truncate">-</span>
           </div>
           ${roleSwitcher}
-          <span class="hidden sm:inline text-sm text-gray-600">
+          <span class="hidden lg:inline text-sm text-gray-600 max-w-[180px] truncate">
             <i class="fa-solid fa-user-circle mr-1"></i>${userData.fullName || userData.username}
           </span>
           <button id="logoutBtn" class="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-600 font-medium px-2 py-1.5">
@@ -75,12 +78,12 @@
   function renderSidebar() {
     const currentPage = window.location.pathname.split("/").pop() || "dashboard.html";
 
-   // เมนูที่มี homeroomLevels (ของครูประจำชั้น) จะแสดงเฉพาะเมื่อระดับชั้นที่ดูแล (userData.homeroomLevel) ตรงกับที่กำหนด — 5 ต.ค. 2569
-   const homeroomLevel = userData.homeroomLevel || "";
-   const items = MENU_CONFIG.filter(
-     (item) => item.roles.includes(currentRole) && (!item.homeroomLevels || item.homeroomLevels.includes(homeroomLevel))
-   );
-    
+    // เมนูที่มี homeroomLevels (ของครูประจำชั้น) จะแสดงเฉพาะเมื่อระดับชั้นที่ดูแล (userData.homeroomLevel) ตรงกับที่กำหนด — 5 ต.ค. 2569
+    const homeroomLevel = userData.homeroomLevel || "";
+    const items = MENU_CONFIG.filter(
+      (item) => item.roles.includes(currentRole) && (!item.homeroomLevels || item.homeroomLevels.includes(homeroomLevel))
+    );
+
     // บทบาทผู้อำนวยการสถานศึกษา: ไม่ต้องมีเมนู "หน้าหลัก" มีเมนูเดียวคือ "รายงานสรุปผู้บริหาร" (27 ก.ย. 2569)
     const homeLink =
       currentRole === "DIRECTOR"
