@@ -30,6 +30,12 @@ async function callApi(action, payload = {}) {
 
 const CACHE_TTL_MS = 60 * 1000; // แคชฝั่งเบราว์เซอร์ไว้ 60 วินาที
 
+// action ที่ข้อมูลแทบไม่เปลี่ยนระหว่างวัน ให้แคชนานกว่าค่าเริ่มต้น (8 ต.ค. 2569)
+const CACHE_TTL_BY_ACTION_MS = {
+  getTeacherSubjectsPageData: 10 * 60 * 1000, // รายวิชา/ปีที่ครูได้รับมอบหมาย
+  getGradingPeriodStatus: 2 * 60 * 1000, // สถานะช่วงเวลาบันทึกคะแนน (ตัวนับถอยหลังที่ส่วนหัว)
+};
+
 async function callApiCached(action, payload = {}) {
   const cacheKey = "wscore_cache_" + action + "_" + JSON.stringify(payload);
 
