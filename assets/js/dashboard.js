@@ -314,6 +314,12 @@ function registrarStatusBadgeHtml(status) {
   };
   return map[status] || "";
 }
+// ป้ายบอกว่าครูกด "ส่งผลการเรียน" ของภาคเรียนที่เปิดอยู่แล้วหรือยัง (แยกจากความครบของคะแนนที่กรอก)
+function registrarSubmitBadgeHtml(submitted) {
+  return submitted
+    ? '<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700"><i class="fa-solid fa-paper-plane"></i>ส่งคะแนนแล้ว</span>'
+    : '<span class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700"><i class="fa-solid fa-hourglass-half"></i>รอการส่ง</span>';
+}
 
 function registrarProgressBarColor(status) {
   if (status === "complete") return "bg-green-500";
@@ -471,6 +477,7 @@ function renderRegistrarProgressTable(rows) {
           </div>
           <span class="text-xs text-gray-500 w-20 text-right whitespace-nowrap">${r.completeCount}/${r.totalStudents} คน</span>
         </div>
+        <div class="mt-1.5">${registrarSubmitBadgeHtml(r.submitted)}</div>
       </td>
       <td class="px-4 py-3">${registrarStatusBadgeHtml(r.status)}</td>
       <td class="px-4 py-3 text-center">
