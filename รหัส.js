@@ -103,7 +103,62 @@ const ACTION_ROLES = {
   // หน้าแรกนายทะเบียน: กำกับติดตามความคืบหน้าการบันทึกคะแนนของครูประจำวิชาทุกคน (อ่านอย่างเดียว) — 5 ต.ค. 2569
   getRegistrarTeacherProgressOverview: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
   getTeacherProgressDetail: ["REGISTRAR", "ASSISTANT_REGISTRAR"],
+  // โหลดข้อมูลหลายห้อง/วิชาของครูล่วงหน้าในคำขอเดียว (อ่านอย่างเดียว) — สิทธิ์ของแต่ละรายการตรวจแยกใน handleBatch — 8 ต.ค. 2569
+  batch: ["SUBJECT_TEACHER", "HOMEROOM_TEACHER"],
 };
+
+/**
+ * ===== โหลดข้อมูลล่วงหน้าแบบชุด (8 ต.ค. 2569) =====
+ * ให้หน้าเว็บของครูขอข้อมูลหน้าจอหลายชุด (เช่น ทุกวิชา x ห้องที่ตนสอน) ในคำขอเดียว เพื่อเก็บไว้ในเบราว์เซอร์ให้เลือกแล้วขึ้นทันที
+ * - อนุญาตเฉพาะ action แบบ "อ่านอย่างเดียว" ที่อยู่ในรายการด้านล่างเท่านั้น (ห้ามบันทึก/ลบ/ซ้อน batch)
+ * - แต่ละรายการตรวจสิทธิ์ Role ของ action นั้นตาม ACTION_ROLES และให้ handler เดิมตรวจสิทธิ์เจ้าของข้อมูลเองเหมือนเรียกปกติ
+ *   (userId ถูกเขียนทับด้วยผู้ใช้จริงจาก session เสมอ ครูจึงขอข้อมูลของวิชา/ห้องที่ไม่ได้สอนไม่ได้)
+ * body.calls = [{ key, action, payload }] สูงสุด 25 รายการ ถ้าใช้เวลานานเกินกำหนดจะข้ามรายการที่เหลือ (ฝั่งเว็บค่อยขอใหม่ทีหลังได้)
+ */
+const BATCH_ALLOWED_ACTIONS = {
+  getTeacherSubjectsPageData: (b) => handleGetTeacherSubjectsPageData(b.userId),
+  getGradeSetup: (b) => handleGetGradeSetup(b),
+  getGradeEntryPageData: (b) => handleGetGradeEntryPageData(b),
+  getFinalizePageData: (b) => handleGetFinalizePageData(b),
+  getHomeroomSummaryPageData: (b) => handleGetHomeroomSummaryPageData(b),
+  getPt12PageData: (b) => handleGetPt12PageData(b),
+};
+const BATCH_MAX_CALLS = 25;
+const BATCH_MAX_MS = 25000;
+
+function handleBatch(body) {
+  const calls = Array.isArray(body.calls) ? body.calls : [];
+  if (calls.length === 0) return { status: "error", message: "ไม่มีรายการที่ต้องการโหลด" };
+  if (calls.length > BATCH_MAX_CALLS) {
+    return { status: "error", message: "โหลดพร้อมกันได้ไม่เกิน " + BATCH_MAX_CALLS + " รายการต่อครั้ง" };
+  }
+
+  const startedAt = Date.now();
+  const results = calls.map((call) => {
+    const key = call && call.key !== undefined ? call.key : null;
+    const action = call ? call.action : "";
+    const fn = BATCH_ALLOWED_ACTIONS[action];
+    if (!fn) return { key: key, result: { status: "error", message: "action นี้ไม่อนุญาตให้โหลดแบบชุด: " + action } };
+
+    if (Date.now() - startedAt > BATCH_MAX_MS) {
+      return { key: key, result: { status: "error", skipped: true, message: "ข้ามเนื่องจากใช้เวลานาน" } };
+    }
+
+    const requiredRoles = ACTION_ROLES[action];
+    if (requiredRoles && !hasAnyRole(body.userId, requiredRoles)) {
+      return { key: key, result: { status: "error", message: "คุณไม่มีสิทธิ์ใช้งานฟังก์ชันนี้" } };
+    }
+
+    try {
+      const subBody = Object.assign({}, call.payload || {}, { action: action, userId: body.userId, token: body.token });
+      return { key: key, result: fn(subBody) };
+    } catch (err) {
+      return { key: key, result: { status: "error", message: "เกิดข้อผิดพลาดในระบบ: " + err.message } };
+    }
+  });
+
+  return { status: "success", data: { results: results } };
+}
 
 /**
  * ตรวจว่าข้อมูลที่ส่งมา (ทุกชั้นของ object/array) มีข้อความที่หน้าตาเป็นแท็ก HTML หรือไม่ เช่น <script>, </div>, <img ...>
@@ -367,6 +422,9 @@ function doPost(e) {
         break;
       case "getTeacherProgressDetail":
         result = handleGetTeacherProgressDetail(body);
+        break;
+      case "batch":
+        result = handleBatch(body);
         break;
 
       default:
@@ -1231,6 +1289,32 @@ function handleGetHomeroomTeachers() {
   return { status: "success", data: homeroomTeachers };
 }
 
+/**
+ * สถานะการส่งคะแนนของ 1 รายวิชา แยกตามห้องที่ครูประจำชั้นดูแล (ใช้แสดงที่หน้าแรกครูประจำชั้น)
+ * คืน [{ classId, label, teachers, sem1, sem2 }] โดย sem1/sem2 = true เมื่อส่งผลการเรียนภาคเรียนนั้นแล้ว
+ */
+function buildHomeroomSubjectClassStatus(subjectId, assignmentsInMyClasses, myClasses, academicYearId) {
+  const users = getCachedSheetData("Users", 300);
+  const nameById = {};
+  users.forEach((u) => (nameById[String(u.UserID)] = u.FullName));
+  const result = [];
+  myClasses.forEach((c) => {
+    const mine = assignmentsInMyClasses.filter(
+      (a) => String(a.SubjectID) === String(subjectId) && String(a.ClassID) === String(c.ClassID)
+    );
+    if (mine.length === 0) return;
+    const teachers = Array.from(new Set(mine.map((a) => nameById[String(a.TeacherUserID)] || "").filter(Boolean)));
+    result.push({
+      classId: c.ClassID,
+      label: c.GradeLevel + "/" + c.RoomNumber,
+      teachers: teachers.join(", "),
+      sem1: isSemesterSubmitted(subjectId, academicYearId, c.ClassID, 1),
+      sem2: isSemesterSubmitted(subjectId, academicYearId, c.ClassID, 2),
+    });
+  });
+  return result;
+}
+
 function handleGetDashboardData(body) {
   const role = body.role;
   const userId = body.userId;
@@ -1450,6 +1534,8 @@ function handleGetDashboardData(body) {
           subjectName: subj.SubjectName,
           subjectType: subj.SubjectType || "",
           subjectGroup: subj.SubjectGroup || "",
+          // สถานะการส่งคะแนนรายห้อง/ภาคเรียน + ชื่อครูผู้สอน ไว้กำกับติดตามที่หน้าแรก — 8 ต.ค. 2569
+          classes: buildHomeroomSubjectClassStatus(subjectId, assignmentsInMyClasses, myClasses, currentYearId),
         };
       })
       .filter(Boolean);
