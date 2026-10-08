@@ -38,12 +38,13 @@ const CACHE_TTL_BY_ACTION_MS = {
 
 async function callApiCached(action, payload = {}) {
   const cacheKey = "wscore_cache_" + action + "_" + JSON.stringify(payload);
-
+  const ttlMs = CACHE_TTL_BY_ACTION_MS[action] || CACHE_TTL_MS;
+  
   try {
     const cached = sessionStorage.getItem(cacheKey);
     if (cached) {
       const parsed = JSON.parse(cached);
-      if (Date.now() - parsed.time < CACHE_TTL_MS) {
+      if (Date.now() - parsed.time < ttlMs) {
         return parsed.data;
       }
     }
