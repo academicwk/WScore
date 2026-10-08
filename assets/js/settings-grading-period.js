@@ -130,7 +130,8 @@ async function handleSubmitPeriod(e, semester) {
   }
 
   const result = await callApi("setGradingPeriod", { academicYearId, semester, startDateTime, endDateTime });
-
+  clearApiCache("getGradingPeriodStatus");
+  
   if (result.status === "success") {
     Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     await loadPageData();
@@ -162,7 +163,8 @@ async function handleSetManualStatus(semester, manualStatus) {
   if (!confirmResult.isConfirmed) return;
 
   const result = await callApi("setGradingPeriodManualStatus", { academicYearId, semester, manualStatus });
-
+  clearApiCache("getGradingPeriodStatus");
+  
   if (result.status === "success") {
     Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     await loadPageData();
