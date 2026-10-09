@@ -10,10 +10,6 @@ let myAssignments = [];
 let currentResults = [];
 let isSubmittedSem1 = false;
 let isSubmittedSem2 = false;
-let isFinalizeStale = false; // true ระหว่างแสดงข้อมูลจากแคช รอข้อมูลล่าสุด (ปิดปุ่มส่ง/ดึงผลไว้ชั่วครู่) — 8 ต.ค. 2569
-let finalizeLoadSeq = 0;
-let currentFinalizePayload = null;
-let isFinalizeActionRunning = false;
 
 document.addEventListener("DOMContentLoaded", async function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
@@ -30,24 +26,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     clearFinalize();
   });
   document.getElementById("classFilter").addEventListener("change", loadFinalizeIfReady);
-
-  prefetchFinalizeData();
-  // รีเฟรชข้อมูลห้องที่เปิดอยู่เบื้องหลังเป็นระยะ (ไม่ทำตอนกำลังส่ง/ดึงผลการเรียน)
-  swrStartAutoRefresh(() => (isFinalizeActionRunning ? null : loadFinalizeIfReady(true)));
 });
-
-// โหลดล่วงหน้าข้อมูลทุกวิชา x ห้องที่ครูคนนี้สอน (ปีที่เลือก) ให้เลือกแล้วขึ้นทันที
-function prefetchFinalizeData() {
-  const yearId = document.getElementById("yearFilter").value;
-  if (!yearId) return;
-  const items = myAssignments
-    .filter((a) => String(a.academicYearId) === String(yearId))
-    .map((a) => ({
-      action: "getFinalizePageData",
-      payload: { subjectId: a.subjectId, academicYearId: yearId, classId: a.classId },
-    }));
-  if (items.length > 0) swrPrefetch(items);
-}
 
 async function loadPageData(userId) {
   const result = await callApiCached("getTeacherSubjectsPageData", { userId });
@@ -101,9 +80,6 @@ function renderClassOptionsForSubject() {
 }
 
 function clearFinalize() {
-  finalizeLoadSeq++; // ยกเลิกผลของคำขอที่ยังค้างอยู่
-  currentFinalizePayload = null;
-  isFinalizeStale = false;
   document.getElementById("classFilter").value = "";
   document.getElementById("finalizeContent").innerHTML = `
     <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">
@@ -111,66 +87,33 @@ function clearFinalize() {
     </div>`;
 }
 
-async function loadFinalizeIfReady(background) {
-  const isBackground = background === true; // เมื่อเรียกจาก event ของ dropdown ค่าที่ส่งมาเป็น Event ไม่ใช่ true
+async function loadFinalizeIfReady() {
   const yearId = document.getElementById("yearFilter").value;
   const subjectId = document.getElementById("subjectFilter").value;
   const classId = document.getElementById("classFilter").value;
 
   if (!yearId || !subjectId || !classId) return;
 
-  const payload = { subjectId, academicYearId: yearId, classId };
-  const container = document.getElementById("finalizeContent");
-
-  if (isBackground) {
-    if (!currentFinalizePayload || swrKey("x", currentFinalizePayload) !== swrKey("x", payload)) return;
-  } else {
-    finalizeLoadSeq++;
-    currentFinalizePayload = payload;
-    isFinalizeStale = false;
-    if (!swrRead(swrKey("getFinalizePageData", payload))) {
-      container.innerHTML = `
+  document.getElementById("finalizeContent").innerHTML = `
     <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>`;
-    }
-  }
-  const seq = finalizeLoadSeq;
 
-  await callApiSWR("getFinalizePageData", payload, (result, meta) => {
-    if (seq !== finalizeLoadSeq) return; // ผู้ใช้เปลี่ยนตัวเลือกไปแล้ว ทิ้งผลของคำขอนี้
-
-    if (meta.fromCache) {
-      if (isBackground) return;
-      currentResults = result.data.students;
-      isSubmittedSem1 = result.data.isSubmittedSem1;
-      isSubmittedSem2 = result.data.isSubmittedSem2;
-      isFinalizeStale = true;
-      renderFinalizeTable();
-      return;
-    }
-
-    if (meta.failed) {
-      if (isBackground) return;
-      if (meta.hadCache) {
-        Swal.fire({
-          icon: "warning",
-          title: "ยังอัปเดตข้อมูลล่าสุดไม่ได้",
-          text: "กำลังแสดงข้อมูลที่เคยโหลดไว้ (ปุ่มส่ง/ดึงผลการเรียนถูกปิดไว้) กรุณาเลือกห้องเรียนใหม่อีกครั้งเมื่อเชื่อมต่อได้",
-          confirmButtonColor: "#268244",
-        });
-        return;
-      }
-      container.innerHTML = `
-      <div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${result.message}</div>`;
-      return;
-    }
-
-    if (isBackground && !meta.changed) return;
-    currentResults = result.data.students;
-    isSubmittedSem1 = result.data.isSubmittedSem1;
-    isSubmittedSem2 = result.data.isSubmittedSem2;
-    isFinalizeStale = false;
-    renderFinalizeTable();
+  const result = await callApi("getFinalizePageData", {
+    subjectId,
+    academicYearId: yearId,
+    classId,
   });
+
+  if (result.status !== "success") {
+    document.getElementById("finalizeContent").innerHTML = `
+      <div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${result.message}</div>`;
+    return;
+  }
+
+  currentResults = result.data.students;
+  isSubmittedSem1 = result.data.isSubmittedSem1;
+  isSubmittedSem2 = result.data.isSubmittedSem2;
+
+  renderFinalizeTable();
 }
 
 function gradePointClass(gp) {
@@ -195,13 +138,13 @@ function renderFinalizeTable() {
     <tr class="${si % 2 === 0 ? "bg-sky-200" : "bg-slate-300"}">
       <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap border-b-2 border-gray-400">${r.studentNumber}</td>
       <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-b-2 border-gray-400">${r.fullName}${r.isActive === false ? `<span class="ml-2 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">${String(r.studentStatus || "ไม่ได้กำลังศึกษา").replace(/[<>&"]/g, "")}</span>` : ""}</td>
-      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${r.semester1Raw70.toFixed(2)}</td>
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${Number(r.semester1Raw70)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${r.semester1Exam30.toFixed(2)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary">${r.semester1Total100.toFixed(2)}</td>
-      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${r.semester2Raw70.toFixed(2)}</td>
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${Number(r.semester2Raw70)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${r.semester2Exam30.toFixed(2)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary">${r.semester2Total100.toFixed(2)}</td>
-      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary">${r.yearScore100.toFixed(2)}</td>
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary">${Number(r.yearScore100)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-bold ${gradePointClass(r.gradePoint)}">${r.gradePoint.toFixed(1)}</td>
     </tr>`
     )
@@ -209,12 +152,12 @@ function renderFinalizeTable() {
 
   const semesterActionHtml = (semester, submitted) => {
     const btn = submitted
-      ? `<button onclick="withdrawFinalResults(${semester})" id="finalizeActionBtnSem${semester}" ${isFinalizeStale ? "disabled" : ""}
-          class="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg whitespace-nowrap ${isFinalizeStale ? "opacity-50 cursor-not-allowed" : ""}">
+      ? `<button onclick="withdrawFinalResults(${semester})" id="finalizeActionBtnSem${semester}"
+          class="px-4 py-2 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg whitespace-nowrap">
           <i class="fa-solid fa-rotate-left mr-1.5"></i>ดึงผลกลับ
         </button>`
-      : `<button onclick="submitFinalResults(${semester})" id="finalizeActionBtnSem${semester}" ${isFinalizeStale ? "disabled" : ""}
-          class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg whitespace-nowrap ${isFinalizeStale ? "opacity-50 cursor-not-allowed" : ""}">
+      : `<button onclick="submitFinalResults(${semester})" id="finalizeActionBtnSem${semester}"
+          class="px-4 py-2 text-sm font-medium text-white bg-wprimary hover:bg-wprimary-dark rounded-lg whitespace-nowrap">
           <i class="fa-solid fa-paper-plane mr-1.5"></i>ส่งผลการเรียน
         </button>`;
 
@@ -312,8 +255,6 @@ async function runFinalizeAction(action, semester, loadingText, successText) {
   const classId = document.getElementById("classFilter").value;
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
 
-  if (isFinalizeStale) return; // ยังแสดงข้อมูลจากแคชอยู่ ไม่ให้ส่ง/ดึงผลจนกว่าข้อมูลล่าสุดจะมา
-  isFinalizeActionRunning = true;
   const btn = document.getElementById(`finalizeActionBtnSem${semester}`);
   if (btn) {
     btn.disabled = true;
@@ -330,9 +271,6 @@ async function runFinalizeAction(action, semester, loadingText, successText) {
     });
 
     if (result.status === "success") {
-      // สถานะส่งผล/คะแนนเปลี่ยนแล้ว ล้างสำเนาที่เกี่ยวข้อง ไม่ให้เห็นสถานะเก่าก่อนข้อมูลล่าสุดมา
-      swrClear("getFinalizePageData");
-      swrClear("getGradeEntryPageData");
       Swal.fire({ icon: "success", title: successText, confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
       await loadFinalizeIfReady();
     } else if (Array.isArray(result.missingStudents) && result.missingStudents.length > 0) {
@@ -359,7 +297,5 @@ async function runFinalizeAction(action, semester, loadingText, successText) {
   } catch (err) {
     Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
     renderFinalizeTable();
-  } finally {
-    isFinalizeActionRunning = false;
   }
 }
