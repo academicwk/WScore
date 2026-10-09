@@ -13,13 +13,6 @@ let currentStudents = [];
 let currentScores = {}; // key: studentId|componentId|subComponentId -> score
 let activeComponentId = null; // หน่วย/ปลายภาคที่กำลังแสดงอยู่ (แบบแท็บ)
 let isEntryLocked = false; // true เมื่อวิชา/ห้องนี้ "ส่งผลการเรียน" ไปแล้ว หรือหมดเวลาที่นายทะเบียนกำหนด ห้ามแก้ไขคะแนนต่อ
-let isEntryStale = false; // true ระหว่างแสดงข้อมูลจากแคช รอข้อมูลล่าสุดจากเซิร์ฟเวอร์ (ล็อกช่องกรอกกันบันทึกทับข้อมูลที่ใหม่กว่า) — 8 ต.ค. 2569
-let entryLoadSeq = 0; // ลำดับการโหลด ใช้ทิ้งผลของคำขอเก่าเมื่อผู้ใช้เปลี่ยนตัวเลือกไปแล้ว
-let entryStructureSig = ""; // ลายเซ็นโครงสร้างข้อมูล (ช่องคะแนน/รายชื่อ/สถานะล็อก) ใช้ตัดสินว่าต้องวาดตารางใหม่หรือแค่ปรับค่า
-let dirtyScoreKeys = new Set(); // ช่องที่ครูแก้ไว้แต่ยังไม่ได้บันทึก (ห้ามถูกเขียนทับตอนอัปเดตเบื้องหลัง)
-let lastEntryResult = null; // ผลล่าสุดจากเซิร์ฟเวอร์/แคช (ใช้อัปเดตแคชหลังบันทึกสำเร็จ)
-let currentEntryPayload = null;
-let isSavingScores = false;
 let isPeriodClosed = false; // true เฉพาะกรณีหมดเวลาที่นายทะเบียนกำหนด (แยกจากกรณี "ส่งผลการเรียน" ไปแล้ว เพื่อโชว์ข้อความที่ต่างกัน)
 
 document.addEventListener("DOMContentLoaded", async function () {
@@ -38,30 +31,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   });
   document.getElementById("classFilter").addEventListener("change", loadEntryIfReady);
   document.getElementById("semesterFilter").addEventListener("change", loadEntryIfReady);
-
-  prefetchEntryData();
-  // รีเฟรชข้อมูลห้องที่เปิดอยู่เบื้องหลังเป็นระยะ (ไม่ทำตอนกำลังบันทึก)
-  swrStartAutoRefresh(() => (isSavingScores ? null : loadEntryIfReady(true)));
 });
-
-// โหลดล่วงหน้าข้อมูลทุกวิชา x ห้องที่ครูคนนี้สอน (เฉพาะปีที่เลือกและภาคเรียนที่เปิดบันทึกอยู่) ให้เลือกแล้วขึ้นทันที
-async function prefetchEntryData() {
-  const yearId = document.getElementById("yearFilter").value;
-  if (!yearId) return;
-  const semesters = await swrOpenSemesters();
-  const items = [];
-  semesters.forEach((semester) => {
-    myAssignments
-      .filter((a) => String(a.academicYearId) === String(yearId))
-      .forEach((a) => {
-        items.push({
-          action: "getGradeEntryPageData",
-          payload: { subjectId: a.subjectId, academicYearId: yearId, semester: semester, classId: a.classId },
-        });
-      });
-  });
-  if (items.length > 0) swrPrefetch(items);
-}
 
 async function loadPageData(userId) {
   const result = await callApiCached("getTeacherSubjectsPageData", { userId });
@@ -115,10 +85,6 @@ function renderClassOptionsForSubject() {
 }
 
 function clearEntry() {
-  entryLoadSeq++; // ยกเลิกผลของคำขอที่ยังค้างอยู่
-  currentEntryPayload = null;
-  dirtyScoreKeys = new Set();
-  isEntryStale = false;
   document.getElementById("classFilter").value = "";
   document.getElementById("semesterFilter").value = "";
   document.getElementById("entryContent").innerHTML = `
@@ -127,79 +93,7 @@ function clearEntry() {
     </div>`;
 }
 
-// ลายเซ็นโครงสร้างข้อมูลของหน้า (ไม่รวมคะแนน) ใช้เทียบว่าข้อมูลล่าสุดเปลี่ยนโครงสร้างหรือไม่
-function entrySignature(data) {
-  return JSON.stringify([data.components, data.students, data.isPeriodOpen, data.isSubmitted]);
-}
-
-// ตั้งค่าตัวแปรของหน้าจากข้อมูลที่ได้ (mergeDirty = true คงค่าที่ครูแก้ค้างไว้ ไม่ให้ถูกเขียนทับ)
-function setEntryData(data, mergeDirty) {
-  currentComponents = data.components;
-  currentStudents = data.students;
-  isPeriodClosed = data.isPeriodOpen === false;
-  isEntryLocked = !!data.isSubmitted || isPeriodClosed;
-  entryStructureSig = entrySignature(data);
-
-  const incoming = {};
-  (data.scores || []).forEach((sc) => {
-    incoming[scoreKey(sc.StudentID, sc.ComponentID, sc.SubComponentID)] = Number(sc.Score);
-  });
-
-  if (mergeDirty) {
-    dirtyScoreKeys.forEach((k) => {
-      if (currentScores[k] === undefined) delete incoming[k];
-      else incoming[k] = currentScores[k];
-    });
-  } else {
-    dirtyScoreKeys = new Set();
-  }
-  currentScores = incoming;
-
-  if (!currentComponents.some((c) => String(c.componentId) === String(activeComponentId))) {
-    activeComponentId = currentComponents.length > 0 ? currentComponents[0].componentId : null;
-  }
-}
-
-// อัปเดตเบื้องหลังตอนครูกำลังทำงานอยู่: ปรับเฉพาะช่องที่เปลี่ยน ไม่วาดตารางใหม่ (ไม่ให้เสียตำแหน่ง/สิ่งที่พิมพ์ค้าง)
-function mergeFreshEntryInPlace(data) {
-  const incoming = {};
-  (data.scores || []).forEach((sc) => {
-    incoming[scoreKey(sc.StudentID, sc.ComponentID, sc.SubComponentID)] = Number(sc.Score);
-  });
-
-  const changedKeys = [];
-  Object.keys(incoming).forEach((k) => {
-    if (!dirtyScoreKeys.has(k) && currentScores[k] !== incoming[k]) changedKeys.push(k);
-  });
-  Object.keys(currentScores).forEach((k) => {
-    if (!dirtyScoreKeys.has(k) && incoming[k] === undefined) changedKeys.push(k);
-  });
-  if (changedKeys.length === 0) return 0;
-
-  const touchedStudents = {};
-  changedKeys.forEach((k) => {
-    if (incoming[k] === undefined) delete currentScores[k];
-    else currentScores[k] = incoming[k];
-    touchedStudents[k.split("|")[0]] = true;
-  });
-
-  document.querySelectorAll("input.score-input").forEach((input) => {
-    const k = scoreKey(input.dataset.studentId, input.dataset.componentId, input.dataset.subComponentId);
-    if (changedKeys.indexOf(k) === -1) return;
-    const v = currentScores[k];
-    input.value = v === undefined ? "" : v;
-    const cell = input.closest("td");
-    if (cell) {
-      cell.classList.remove("bg-yellow-200", "bg-green-200", "bg-red-200");
-      cell.classList.add(cellBgClass(v));
-    }
-  });
-  Object.keys(touchedStudents).forEach((sid) => refreshRowComputed(sid));
-  return changedKeys.length;
-}
-
-async function loadEntryIfReady(background) {
-  const isBackground = background === true; // เมื่อเรียกจาก event ของ dropdown ค่าที่ส่งมาเป็น Event ไม่ใช่ true
+async function loadEntryIfReady() {
   const yearId = document.getElementById("yearFilter").value;
   const subjectId = document.getElementById("subjectFilter").value;
   const classId = document.getElementById("classFilter").value;
@@ -207,84 +101,36 @@ async function loadEntryIfReady(background) {
 
   if (!yearId || !subjectId || !classId || !semester) return;
 
-  const payload = { subjectId, academicYearId: yearId, semester, classId };
-  const container = document.getElementById("entryContent");
-
-  if (isBackground) {
-    // ผู้ใช้เปลี่ยนตัวเลือกไปแล้ว/ยังไม่มีข้อมูลที่แสดงอยู่ ไม่ต้องรีเฟรชเบื้องหลัง
-    if (!currentEntryPayload || swrKey("x", currentEntryPayload) !== swrKey("x", payload)) return;
-  } else {
-    entryLoadSeq++;
-    currentEntryPayload = payload;
-    dirtyScoreKeys = new Set();
-    lastEntryResult = null;
-    isEntryStale = false;
-    // มีสำเนาในแคชจะแสดงทันที ไม่ต้องขึ้นข้อความกำลังโหลด
-    if (!swrRead(swrKey("getGradeEntryPageData", payload))) {
-      container.innerHTML = `
+  document.getElementById("entryContent").innerHTML = `
     <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>`;
-    }
-  }
-  const seq = entryLoadSeq;
 
-  await callApiSWR("getGradeEntryPageData", payload, (result, meta) => {
-    if (seq !== entryLoadSeq) return; // ผู้ใช้เปลี่ยนตัวเลือกไปแล้ว ทิ้งผลของคำขอนี้
-
-    if (meta.fromCache) {
-      if (isBackground) return;
-      // แสดงสำเนาจากแคชทันที แต่ล็อกช่องกรอกไว้จนกว่าจะได้ข้อมูลล่าสุด
-      lastEntryResult = result;
-      isEntryStale = true;
-      setEntryData(result.data, false);
-      renderEntryTable();
-      return;
-    }
-
-    if (meta.failed) {
-      if (isBackground) return; // เงียบไว้ ลองใหม่รอบถัดไป
-      if (meta.hadCache) {
-        // เชื่อมต่อไม่ได้ แต่มีสำเนาแสดงอยู่: คงสำเนาไว้แบบอ่านอย่างเดียว (ยังล็อกอยู่) และแจ้งให้ทราบ
-        Swal.fire({
-          icon: "warning",
-          title: "ยังอัปเดตข้อมูลล่าสุดไม่ได้",
-          text: "กำลังแสดงข้อมูลที่เคยโหลดไว้ (ดูได้อย่างเดียว) กรุณาเลือกห้องเรียนใหม่อีกครั้งเมื่อเชื่อมต่อได้",
-          confirmButtonColor: "#268244",
-        });
-        return;
-      }
-      container.innerHTML = `
-      <div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${result.message}</div>`;
-      return;
-    }
-
-    // ได้ข้อมูลล่าสุดจากเซิร์ฟเวอร์
-    lastEntryResult = result;
-    if (!isBackground) {
-      isEntryStale = false;
-      setEntryData(result.data, false);
-      activeComponentId = currentComponents.some((c) => String(c.componentId) === String(activeComponentId))
-        ? activeComponentId
-        : currentComponents.length > 0
-        ? currentComponents[0].componentId
-        : null;
-      renderEntryTable();
-      return;
-    }
-
-    // รีเฟรชเบื้องหลัง
-    if (!meta.changed) return;
-    if (entrySignature(result.data) === entryStructureSig) {
-      const n = mergeFreshEntryInPlace(result.data);
-      if (n > 0) {
-        Swal.fire({ toast: true, position: "top-end", icon: "info", title: `อัปเดตคะแนนจากเซิร์ฟเวอร์ ${n} ช่อง`, showConfirmButton: false, timer: 2500 });
-      }
-    } else {
-      // โครงสร้างเปลี่ยน (เช่น ปิดรับคะแนน/ส่งผลการเรียน/เพิ่มช่องคะแนน/ย้ายนักเรียน) วาดตารางใหม่ โดยคงค่าที่ครูพิมพ์ค้างไว้
-      setEntryData(result.data, true);
-      renderEntryTable();
-      Swal.fire({ toast: true, position: "top-end", icon: "info", title: "ข้อมูลถูกอัปเดตแล้ว", showConfirmButton: false, timer: 2500 });
-    }
+  const result = await callApi("getGradeEntryPageData", {
+    subjectId,
+    academicYearId: yearId,
+    semester,
+    classId,
   });
+
+  if (result.status !== "success") {
+    document.getElementById("entryContent").innerHTML = `
+      <div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${result.message}</div>`;
+    return;
+  }
+
+  currentComponents = result.data.components;
+  currentStudents = result.data.students;
+  isPeriodClosed = result.data.isPeriodOpen === false;
+  isEntryLocked = !!result.data.isSubmitted || isPeriodClosed;
+
+  currentScores = {};
+  (result.data.scores || []).forEach((sc) => {
+    const key = scoreKey(sc.StudentID, sc.ComponentID, sc.SubComponentID);
+    currentScores[key] = Number(sc.Score);
+  });
+
+  activeComponentId = currentComponents.length > 0 ? currentComponents[0].componentId : null;
+
+  renderEntryTable();
 }
 
 function scoreKey(studentId, componentId, subComponentId) {
@@ -385,8 +231,13 @@ function computeScaledExamScore30(studentId) {
 // คะแนนสรุปภาคเรียน (เต็ม 100 เสมอ) = คะแนนระหว่างภาคที่แปลงเป็นฐาน 70 + คะแนนปลายภาคที่แปลงเป็นฐาน 30
 // (สอดคล้องกับสูตรฝั่ง Server ใน computeSemesterScores() ของ Code.gs)
 function computeRowTotal(studentId) {
-  // รวม = ระหว่างภาค (ปัด 2 ตำแหน่ง) + ปลายภาค (ปัด 2 ตำแหน่ง) ตรงกับ Server (computeSemesterScores) และเป็นค่าที่ใช้ตัดเกรด
-  return (scoreCents(computeScaledUnitsScore70(studentId)) + scoreCents(computeScaledExamScore30(studentId))) / 100;
+  // รวม = ระหว่างภาค (ปัดเป็นจำนวนเต็ม) + ปลายภาค (ปัด 2 ตำแหน่ง) ตรงกับ Server (computeSemesterScores) — 9 ต.ค. 2569
+  return (scoreInt(computeScaledUnitsScore70(studentId)) * 100 + scoreCents(computeScaledExamScore30(studentId))) / 100;
+}
+
+// ปัดเป็นจำนวนเต็ม (ปัดขึ้นเมื่อ .5 พอดี) ต้องเหมือน toScoreInt() ใน Code.gs
+function scoreInt(x) {
+  return Math.round(Number(x) + 1e-6);
 }
 
 // ปัดเป็นสตางค์ (ปัดขึ้นเมื่อ .5 พอดี) ต้องเหมือน toScoreCents() ใน Code.gs
@@ -480,9 +331,9 @@ function renderEntryTable() {
                  data-si="${si}" data-ci="${ci}"
                  data-student-id="${st.studentId}" data-component-id="${c.componentId}" data-sub-component-id="${c.subComponentId}"
                  value="${val === undefined ? "" : val}"
-                 oninput="onScoreInput(this)" ${isEntryLocked || isEntryStale || st.isActive === false ? "disabled" : ""}
+                 oninput="onScoreInput(this)" ${isEntryLocked || st.isActive === false ? "disabled" : ""}
                  class="score-input w-16 text-center border border-gray-300 rounded-lg px-1 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-wprimary/30 ${
-                   isEntryLocked || isEntryStale || st.isActive === false ? "opacity-60 cursor-not-allowed" : ""
+                   isEntryLocked || st.isActive === false ? "opacity-60 cursor-not-allowed" : ""
                  }">
         </td>`;
         })
@@ -504,7 +355,7 @@ function renderEntryTable() {
         ${fmtScore2(computeAllUnitsScore(st.studentId))}
       </td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-scaledunits70-for="${st.studentId}">
-        ${fmtScore2(computeScaledUnitsScore70(st.studentId))}
+        ${scoreInt(computeScaledUnitsScore70(st.studentId))}
       </td>`
         : "";
 
@@ -527,12 +378,6 @@ function renderEntryTable() {
     })
     .join("");
 
-  const staleNoticeHtml = isEntryStale
-    ? `<div class="bg-sky-50 border border-sky-200 text-sky-700 text-xs px-4 py-2.5">
-        <i class="fa-solid fa-circle-notch fa-spin mr-1"></i>
-        กำลังอัปเดตข้อมูลล่าสุดจากเซิร์ฟเวอร์ ช่องกรอกจะเปิดให้ใช้งานภายในไม่กี่วินาที
-      </div>`
-    : "";
   const lockNoticeHtml = isPeriodClosed
     ? `<div class="bg-red-50 border border-red-200 text-red-600 text-xs px-4 py-2.5">
         <i class="fa-solid fa-lock mr-1"></i>
@@ -545,7 +390,7 @@ function renderEntryTable() {
       </div>`
     : "";
 
-  const footerHtml = isEntryLocked || isEntryStale
+  const footerHtml = isEntryLocked
     ? `<div class="flex items-center justify-end gap-3 p-4 border-t border-gray-100">
         <button disabled
                 class="px-5 py-2.5 text-sm font-medium text-gray-400 bg-gray-200 rounded-lg cursor-not-allowed">
@@ -562,7 +407,7 @@ function renderEntryTable() {
 
   container.innerHTML = `
     <div class="bg-white rounded-xl shadow overflow-hidden">
-      ${staleNoticeHtml}${lockNoticeHtml}
+      ${lockNoticeHtml}
       <div class="flex overflow-x-auto border-b border-gray-100">
         ${renderTabs()}
       </div>
@@ -606,7 +451,6 @@ function onScoreInput(input) {
   } else {
     currentScores[key] = val;
   }
-  dirtyScoreKeys.add(key); // ช่องที่แก้ไว้แต่ยังไม่ได้บันทึก (กันถูกเขียนทับตอนอัปเดตเบื้องหลัง)
 
   // อัปเดตสีพื้นหลังของช่องนี้ตามคะแนนที่กรอก
   const cell = input.closest("td");
@@ -615,11 +459,7 @@ function onScoreInput(input) {
     cell.classList.add(cellBgClass(val));
   }
 
-  refreshRowComputed(studentId);
-}
-
-// อัปเดตตัวเลขที่คำนวณของแถวนักเรียน 1 คน ตามชนิดแท็บที่กำลังเปิดอยู่ (ใช้ทั้งตอนพิมพ์และตอนอัปเดตเบื้องหลัง)
-function refreshRowComputed(studentId) {
+  // อัปเดตคะแนนของแถวนี้ตามชนิดแท็บที่กำลังเปิดอยู่
   const activeComp = currentComponents.find((c) => String(c.componentId) === String(activeComponentId));
 
   if (activeComp && activeComp.componentType !== "ปลายภาค") {
@@ -637,7 +477,7 @@ function refreshRowComputed(studentId) {
     if (allUnitsScoreCell) allUnitsScoreCell.textContent = fmtScore2(computeAllUnitsScore(studentId));
 
     const scaledUnitsCell = document.querySelector(`[data-scaledunits70-for="${studentId}"]`);
-    if (scaledUnitsCell) scaledUnitsCell.textContent = fmtScore2(computeScaledUnitsScore70(studentId));
+    if (scaledUnitsCell) scaledUnitsCell.textContent = scoreInt(computeScaledUnitsScore70(studentId));
 
     const totalCell = document.querySelector(`[data-total-for="${studentId}"]`);
     if (totalCell) totalCell.textContent = fmtScore2(computeRowTotal(studentId));
@@ -698,8 +538,6 @@ async function saveAllScores() {
   const btn = document.getElementById("saveScoresBtn");
   const statusEl = document.getElementById("saveStatus");
 
-  if (!btn || isEntryStale) return; // ยังแสดงข้อมูลจากแคชอยู่ (ล็อกไว้) ไม่ให้บันทึกทับข้อมูลที่อาจใหม่กว่า
-  isSavingScores = true;
   btn.disabled = true;
   btn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> กำลังบันทึก...';
   if (statusEl) {
@@ -717,18 +555,6 @@ async function saveAllScores() {
     });
 
     if (result.status === "success") {
-      // บันทึกสำเร็จ: ไม่มีช่องค้างแก้ไขอีก และอัปเดตสำเนาในแคชให้ตรงกับที่เพิ่งบันทึก (เลือกห้องนี้ใหม่จะขึ้นคะแนนล่าสุดทันที)
-      dirtyScoreKeys = new Set();
-      if (lastEntryResult && lastEntryResult.data && currentEntryPayload) {
-        const savedRecords = Object.keys(currentScores).map((k) => {
-          const parts = k.split("|");
-          return { StudentID: parts[0], ComponentID: parts[1], SubComponentID: parts[2] || "", Score: currentScores[k] };
-        });
-        const updated = Object.assign({}, lastEntryResult, { data: Object.assign({}, lastEntryResult.data, { scores: savedRecords }) });
-        lastEntryResult = updated;
-        swrSet("getGradeEntryPageData", currentEntryPayload, updated);
-      }
-      swrClear("getFinalizePageData"); // ผลสรุปภาคเรียนที่คำนวณจากคะแนนเปลี่ยนไปแล้ว ให้หน้าส่งผลการเรียนดึงใหม่
       const timeStr = new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
       if (statusEl) {
         statusEl.className = "text-xs text-green-600";
@@ -749,7 +575,6 @@ async function saveAllScores() {
     }
     Swal.fire({ icon: "error", title: "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ", confirmButtonColor: "#268244" });
   } finally {
-    isSavingScores = false;
     btn.disabled = false;
     btn.innerHTML = '<i class="fa-solid fa-floppy-disk mr-1.5"></i>บันทึกคะแนนทั้งหมด';
   }
