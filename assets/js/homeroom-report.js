@@ -9,8 +9,6 @@
 let currentClasses = [];
 let currentStudents = [];
 let currentClassId = null;
-let classDataLoadSeq = 0; // ลำดับการโหลด ใช้ทิ้งผลของคำขอเก่าเมื่อเปลี่ยนห้องไปแล้ว (8 ต.ค. 2569)
-let classDataPrefetched = false;
 
 document.addEventListener("DOMContentLoaded", function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
@@ -119,19 +117,20 @@ async function generateClassReport(userId, classId) {
 
 async function loadClassData(userId, classId) {
   const studentSelect = document.getElementById("studentFilter");
-  const payload = { userId, classId };
-  const seq = ++classDataLoadSeq;
+  studentSelect.innerHTML = `<option value="">- กำลังโหลดข้อมูล... -</option>`;
   clearReport();
 
-  // มีสำเนาในแคชจะแสดงรายชื่อทันที ไม่ต้องขึ้นข้อความกำลังโหลด
-  if (!swrRead(swrKey("getHomeroomSummaryPageData", payload))) {
-    studentSelect.innerHTML = `<option value="">- กำลังโหลดข้อมูล... -</option>`;
-  }
+  try {
+    const result = await callApi("getHomeroomSummaryPageData", { userId, classId });
 
-  const applyClassData = (data) => {
-    renderClassFilter(data);
-    currentClassId = data.selectedClassId;
-    currentStudents = data.students;
+    if (result.status !== "success") {
+      studentSelect.innerHTML = `<option value="">- เกิดข้อผิดพลาด -</option>`;
+      return;
+    }
+
+    renderClassFilter(result.data);
+    currentClassId = result.data.selectedClassId;
+    currentStudents = result.data.students;
 
     if (currentStudents.length === 0) {
       studentSelect.innerHTML = `<option value="">- ไม่มีนักเรียนในห้องนี้ -</option>`;
@@ -143,37 +142,9 @@ async function loadClassData(userId, classId) {
       currentStudents
         .map((s) => `<option value="${s.studentId}">เลขที่ ${s.studentNumber} - ${s.fullName}</option>`)
         .join("");
-  };
-
-  await callApiSWR("getHomeroomSummaryPageData", payload, (result, meta) => {
-    if (seq !== classDataLoadSeq) return; // เปลี่ยนห้องไปแล้ว ทิ้งผลของคำขอนี้
-
-    if (meta.fromCache) {
-      applyClassData(result.data);
-      return;
-    }
-
-    if (meta.failed) {
-      if (meta.hadCache) return; // มีรายชื่อจากแคชแสดงอยู่แล้ว เงียบไว้
-      studentSelect.innerHTML = meta.offline
-        ? `<option value="">- เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ -</option>`
-        : `<option value="">- เกิดข้อผิดพลาด -</option>`;
-      return;
-    }
-
-    if (result.data.selectedClassId) {
-      swrSet("getHomeroomSummaryPageData", { userId, classId: result.data.selectedClassId }, result);
-    }
-    // รายชื่อเหมือนที่แสดงจากแคชไปแล้ว ไม่ต้องวาดใหม่ (กันตัวเลือกนักเรียนที่ครูเลือกไว้หาย)
-    if (!(meta.hadCache && !meta.changed)) applyClassData(result.data);
-
-    if (!classDataPrefetched && Array.isArray(result.data.classOptions) && result.data.classOptions.length > 1) {
-      classDataPrefetched = true;
-      swrPrefetch(
-        result.data.classOptions.map((c) => ({ action: "getHomeroomSummaryPageData", payload: { userId, classId: c.classId } }))
-      );
-    }
-  });
+  } catch (err) {
+    studentSelect.innerHTML = `<option value="">- เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ -</option>`;
+  }
 }
 
 function renderClassFilter(data) {
@@ -221,6 +192,11 @@ function scoreText(value) {
   return value === null || value === undefined ? "-" : Number(value).toFixed(2);
 }
 
+// คะแนนทั้งปีเป็นจำนวนเต็มเสมอ (ปัดแล้วที่ Server) — 9 ต.ค. 2569
+function yearScoreText(value) {
+  return value === null || value === undefined ? "-" : String(Math.round(Number(value)));
+}
+
 function submitStatusBadge(isSubmitted) {
   return isSubmitted
     ? `<span class="text-[11px] text-green-600 font-medium"><i class="fa-solid fa-circle-check mr-1"></i>ส่งแล้ว</span>`
@@ -254,7 +230,7 @@ function renderStudentReport(data, userId, classId, studentId) {
             : `<div>${scoreText(s.semester2Total100)}</div><div class="mt-0.5">${submitStatusBadge(s.isSubmittedSem2)}</div>`
         }
       </td>
-      <td class="px-4 py-3 text-center text-gray-600">${isActivity ? "-" : scoreText(s.yearScore100)}</td>
+      <td class="px-4 py-3 text-center text-gray-600">${isActivity ? "-" : yearScoreText(s.yearScore100)}</td>
       <td class="px-4 py-3 text-center font-medium text-wsecondary">${
         isActivity ? s.activityResult || "-" : s.gradePoint !== null ? s.gradePoint.toFixed(1) : "-"
       }</td>
