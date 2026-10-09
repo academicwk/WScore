@@ -171,6 +171,7 @@
         if (result.isConfirmed) {
           sessionStorage.removeItem("wscore_user");
           sessionStorage.removeItem("wscore_current_role");
+          if (typeof clearAllApiCaches === "function") clearAllApiCaches(); // ล้างสำเนาข้อมูลคะแนนที่แคชไว้ในเบราว์เซอร์
           window.location.href = "login.html";
         }
       });

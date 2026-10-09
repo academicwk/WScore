@@ -138,13 +138,13 @@ function renderFinalizeTable() {
     <tr class="${si % 2 === 0 ? "bg-sky-200" : "bg-slate-300"}">
       <td class="px-3 py-2 text-gray-500 text-center whitespace-nowrap border-b-2 border-gray-400">${r.studentNumber}</td>
       <td class="px-3 py-2 text-gray-700 whitespace-nowrap border-l-2 border-b-2 border-gray-400">${r.fullName}${r.isActive === false ? `<span class="ml-2 text-[11px] font-medium px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">${String(r.studentStatus || "ไม่ได้กำลังศึกษา").replace(/[<>&"]/g, "")}</span>` : ""}</td>
-      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${r.semester1Raw70.toFixed(2)}</td>
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${Number(r.semester1Raw70)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${r.semester1Exam30.toFixed(2)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary">${r.semester1Total100.toFixed(2)}</td>
-      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${r.semester2Raw70.toFixed(2)}</td>
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${Number(r.semester2Raw70)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400">${r.semester2Exam30.toFixed(2)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary">${r.semester2Total100.toFixed(2)}</td>
-      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary">${r.yearScore100.toFixed(2)}</td>
+      <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-semibold text-wprimary">${Number(r.yearScore100)}</td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-bold ${gradePointClass(r.gradePoint)}">${r.gradePoint.toFixed(1)}</td>
     </tr>`
     )

@@ -231,8 +231,13 @@ function computeScaledExamScore30(studentId) {
 // คะแนนสรุปภาคเรียน (เต็ม 100 เสมอ) = คะแนนระหว่างภาคที่แปลงเป็นฐาน 70 + คะแนนปลายภาคที่แปลงเป็นฐาน 30
 // (สอดคล้องกับสูตรฝั่ง Server ใน computeSemesterScores() ของ Code.gs)
 function computeRowTotal(studentId) {
-  // รวม = ระหว่างภาค (ปัด 2 ตำแหน่ง) + ปลายภาค (ปัด 2 ตำแหน่ง) ตรงกับ Server (computeSemesterScores) และเป็นค่าที่ใช้ตัดเกรด
-  return (scoreCents(computeScaledUnitsScore70(studentId)) + scoreCents(computeScaledExamScore30(studentId))) / 100;
+  // รวม = ระหว่างภาค (ปัดเป็นจำนวนเต็ม) + ปลายภาค (ปัด 2 ตำแหน่ง) ตรงกับ Server (computeSemesterScores) — 9 ต.ค. 2569
+  return (scoreInt(computeScaledUnitsScore70(studentId)) * 100 + scoreCents(computeScaledExamScore30(studentId))) / 100;
+}
+
+// ปัดเป็นจำนวนเต็ม (ปัดขึ้นเมื่อ .5 พอดี) ต้องเหมือน toScoreInt() ใน Code.gs
+function scoreInt(x) {
+  return Math.round(Number(x) + 1e-6);
 }
 
 // ปัดเป็นสตางค์ (ปัดขึ้นเมื่อ .5 พอดี) ต้องเหมือน toScoreCents() ใน Code.gs
@@ -350,7 +355,7 @@ function renderEntryTable() {
         ${fmtScore2(computeAllUnitsScore(st.studentId))}
       </td>
       <td class="px-3 py-2 text-center border-l-2 border-b-2 border-gray-400 font-medium text-gray-600" data-scaledunits70-for="${st.studentId}">
-        ${fmtScore2(computeScaledUnitsScore70(st.studentId))}
+        ${scoreInt(computeScaledUnitsScore70(st.studentId))}
       </td>`
         : "";
 
@@ -472,7 +477,7 @@ function onScoreInput(input) {
     if (allUnitsScoreCell) allUnitsScoreCell.textContent = fmtScore2(computeAllUnitsScore(studentId));
 
     const scaledUnitsCell = document.querySelector(`[data-scaledunits70-for="${studentId}"]`);
-    if (scaledUnitsCell) scaledUnitsCell.textContent = fmtScore2(computeScaledUnitsScore70(studentId));
+    if (scaledUnitsCell) scaledUnitsCell.textContent = scoreInt(computeScaledUnitsScore70(studentId));
 
     const totalCell = document.querySelector(`[data-total-for="${studentId}"]`);
     if (totalCell) totalCell.textContent = fmtScore2(computeRowTotal(studentId));

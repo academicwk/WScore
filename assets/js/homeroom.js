@@ -4,6 +4,9 @@
  */
 
 let currentClasses = [];
+let homeroomLoadSeq = 0; // ลำดับการโหลด ใช้ทิ้งผลของคำขอเก่าเมื่อเปลี่ยนห้องไปแล้ว (8 ต.ค. 2569)
+let homeroomSelectedClassId = null;
+let homeroomPrefetched = false;
 
 document.addEventListener("DOMContentLoaded", function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
@@ -14,24 +17,54 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   loadHomeroomSummary(userData.userId, null);
+  // รีเฟรชข้อมูลห้องที่เปิดอยู่เบื้องหลังเป็นระยะ (แสดงผลอย่างเดียว ไม่มีช่องกรอก)
+  swrStartAutoRefresh(() => loadHomeroomSummary(userData.userId, homeroomSelectedClassId, true));
 });
 
-async function loadHomeroomSummary(userId, classId) {
+async function loadHomeroomSummary(userId, classId, background) {
+  const isBackground = background === true;
   const content = document.getElementById("homeroomContent");
-  content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>`;
+  const payload = { userId, classId };
+  if (!isBackground) homeroomLoadSeq++;
+  const seq = homeroomLoadSeq;
 
-  try {
-    const result = await callApi("getHomeroomSummaryPageData", { userId, classId });
+  // มีสำเนาในแคชจะแสดงทันที ไม่ต้องขึ้นข้อความกำลังโหลด
+  if (!isBackground && !swrRead(swrKey("getHomeroomSummaryPageData", payload))) {
+    content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>`;
+  }
 
-    if (result.status !== "success") {
-      content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${result.message}</div>`;
+  await callApiSWR("getHomeroomSummaryPageData", payload, (result, meta) => {
+    if (seq !== homeroomLoadSeq) return; // เปลี่ยนห้องไปแล้ว ทิ้งผลของคำขอนี้
+
+    if (meta.fromCache) {
+      if (isBackground) return;
+      homeroomSelectedClassId = result.data.selectedClassId;
+      renderHomeroomSummary(result.data);
       return;
     }
 
-    renderHomeroomSummary(result.data);
-  } catch (err) {
-    content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</div>`;
-  }
+    if (meta.failed) {
+      if (isBackground || meta.hadCache) return; // มีข้อมูลเดิมแสดงอยู่แล้ว เงียบไว้
+      const msg = meta.offline ? "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ" : result.message;
+      content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${msg}</div>`;
+      return;
+    }
+
+    homeroomSelectedClassId = result.data.selectedClassId;
+    // เก็บสำเนาซ้ำภายใต้รหัสห้องจริงด้วย (กรณีเปิดหน้าโดยไม่ระบุห้อง) ให้เลือกห้องนี้จาก dropdown แล้วขึ้นทันที
+    if (result.data.selectedClassId) {
+      swrSet("getHomeroomSummaryPageData", { userId, classId: result.data.selectedClassId }, result);
+    }
+    if (!(meta.hadCache && !meta.changed)) renderHomeroomSummary(result.data);
+
+    // โหลดล่วงหน้าห้องอื่นที่ครูคนนี้เป็นครูประจำชั้น
+    if (!homeroomPrefetched && Array.isArray(result.data.classOptions) && result.data.classOptions.length > 1) {
+      homeroomPrefetched = true;
+      swrPrefetch(
+        result.data.classOptions.map((c) => ({ action: "getHomeroomSummaryPageData", payload: { userId, classId: c.classId } }))
+      );
+    }
+  });
 }
 
 function renderClassFilter(data) {
