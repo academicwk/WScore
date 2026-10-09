@@ -7,6 +7,7 @@
 let allYears = [];
 let myAssignments = [];
 let selectedInfo = null;
+let reportLoadSeq = 0; // ลำดับการโหลด ใช้ทิ้งผลของคำขอเก่าเมื่อผู้ใช้เปลี่ยนตัวเลือกไปแล้ว (8 ต.ค. 2569)
 
 document.addEventListener("DOMContentLoaded", async function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
@@ -23,7 +24,22 @@ document.addEventListener("DOMContentLoaded", async function () {
     clearReport();
   });
   document.getElementById("classFilter").addEventListener("change", showReportReady);
+
+  prefetchReportData();
 });
+
+// โหลดล่วงหน้าสถานะการส่งผลการเรียนของทุกวิชา x ห้องที่ครูคนนี้สอน (ปีที่เลือก) ใช้ชุดข้อมูลเดียวกับหน้าตัดสินผลการเรียน
+function prefetchReportData() {
+  const yearId = document.getElementById("yearFilter").value;
+  if (!yearId) return;
+  const items = myAssignments
+    .filter((a) => String(a.academicYearId) === String(yearId))
+    .map((a) => ({
+      action: "getFinalizePageData",
+      payload: { subjectId: a.subjectId, academicYearId: yearId, classId: a.classId },
+    }));
+  if (items.length > 0) swrPrefetch(items);
+}
 
 async function loadPageData(userId) {
   const result = await callApiCached("getTeacherSubjectsPageData", { userId });
@@ -77,6 +93,7 @@ function renderClassOptionsForSubject() {
 }
 
 function clearReport() {
+  reportLoadSeq++; // ยกเลิกผลของคำขอที่ยังค้างอยู่
   document.getElementById("classFilter").value = "";
   selectedInfo = null;
   document.getElementById("reportContent").innerHTML = `
@@ -108,26 +125,46 @@ async function showReportReady() {
     classText: classOption ? classOption.textContent : "",
   };
 
-  document.getElementById("reportContent").innerHTML = `
+  const payload = { subjectId, academicYearId: yearId, classId };
+  const seq = ++reportLoadSeq;
+
+  // มีสำเนาในแคชจะแสดงทันที (ปุ่มสร้างรายงานปิดไว้จนกว่าจะได้สถานะล่าสุด) ถ้าไม่มีให้ขึ้นข้อความกำลังตรวจสอบ
+  if (!swrRead(swrKey("getFinalizePageData", payload))) {
+    document.getElementById("reportContent").innerHTML = `
     <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังตรวจสอบสถานะ...</div>`;
+  }
 
-  const result = await callApi("getFinalizePageData", {
-    subjectId,
-    academicYearId: yearId,
-    classId,
+  await callApiSWR("getFinalizePageData", payload, (result, meta) => {
+    if (seq !== reportLoadSeq) return; // ผู้ใช้เปลี่ยนตัวเลือกไปแล้ว ทิ้งผลของคำขอนี้
+
+    if (meta.fromCache) {
+      renderReportPanel(!!result.data.isSubmittedSem1, !!result.data.isSubmittedSem2, true);
+      return;
+    }
+
+    if (meta.failed && meta.hadCache) {
+      Swal.fire({
+        icon: "warning",
+        title: "ยังตรวจสอบสถานะล่าสุดไม่ได้",
+        text: "กรุณาเลือกห้องเรียนใหม่อีกครั้งเมื่อเชื่อมต่อได้",
+        confirmButtonColor: "#268244",
+      });
+      return;
+    }
+
+    // ออกรายงานได้ตั้งแต่ส่งผลการเรียนภาคเรียนที่ 1 แล้ว (ไม่ต้องรอครบทั้งปี) — เนื้อหารายงานจะแสดงเฉพาะภาคเรียนที่ 1
+    // จนกว่าจะส่งภาคเรียนที่ 2 ด้วย จึงจะได้รายงานฉบับเต็มทั้งปี
+    const isSubmittedSem1 = result.status === "success" && !!result.data.isSubmittedSem1;
+    const isSubmittedSem2 = result.status === "success" && !!result.data.isSubmittedSem2;
+    renderReportPanel(isSubmittedSem1, isSubmittedSem2, false);
   });
-
-  // ออกรายงานได้ตั้งแต่ส่งผลการเรียนภาคเรียนที่ 1 แล้ว (ไม่ต้องรอครบทั้งปี) — เนื้อหารายงานจะแสดงเฉพาะภาคเรียนที่ 1
-  // จนกว่าจะส่งภาคเรียนที่ 2 ด้วย จึงจะได้รายงานฉบับเต็มทั้งปี
-  const isSubmittedSem1 = result.status === "success" && !!result.data.isSubmittedSem1;
-  const isSubmittedSem2 = result.status === "success" && !!result.data.isSubmittedSem2;
-  renderReportPanel(isSubmittedSem1, isSubmittedSem2);
 }
 
-function renderReportPanel(isSubmittedSem1, isSubmittedSem2) {
+function renderReportPanel(isSubmittedSem1, isSubmittedSem2, isStale) {
   if (!selectedInfo) return;
 
-  const canGenerate = isSubmittedSem1;
+  // ระหว่างแสดงข้อมูลจากแคช ยังไม่ให้กดสร้างรายงานจนกว่าจะได้สถานะล่าสุด
+  const canGenerate = isSubmittedSem1 && !isStale;
 
   const actionHtml = canGenerate
     ? `<button onclick="generateReport()" id="generateReportBtn"
@@ -140,7 +177,11 @@ function renderReportPanel(isSubmittedSem1, isSubmittedSem2) {
       </button>`;
 
   let noticeHtml;
-  if (!canGenerate) {
+  if (isStale) {
+    noticeHtml = `<div class="mt-3 text-xs text-sky-600">
+        <i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังตรวจสอบสถานะล่าสุด...
+      </div>`;
+  } else if (!canGenerate) {
     noticeHtml = `<div class="mt-3 text-xs text-amber-600">
         <i class="fa-solid fa-triangle-exclamation mr-1"></i>
         ต้อง "ส่งผลการเรียน" อย่างน้อยภาคเรียนที่ 1 ในเมนู "ตัดสินผลการเรียน" ของวิชา/ห้องนี้ก่อน จึงจะออกรายงานได้
