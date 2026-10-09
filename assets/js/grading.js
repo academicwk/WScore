@@ -10,6 +10,20 @@
 let allYears = [];
 let myAssignments = [];
 let currentSetup = [];
+let isSetupStale = false; // true ระหว่างแสดงข้อมูลจากแคช รอข้อมูลล่าสุด (ล็อกปุ่มเพิ่ม/แก้ชื่อ/ลบช่องไว้ชั่วครู่) — 8 ต.ค. 2569
+let setupLoadSeq = 0; // ลำดับการโหลด ใช้ทิ้งผลของคำขอเก่าเมื่อผู้ใช้เปลี่ยนตัวเลือกไปแล้ว
+
+// ข้อความแจ้งเมื่อกดปุ่มแก้ไขระหว่างที่ยังแสดงข้อมูลจากแคช
+function notifySetupStale() {
+  Swal.fire({ toast: true, position: "top-end", icon: "info", title: "กำลังอัปเดตข้อมูลล่าสุด กรุณารอสักครู่", showConfirmButton: false, timer: 1800 });
+}
+
+// ช่องเก็บคะแนนเปลี่ยนแล้ว ล้างสำเนาข้อมูลที่เกี่ยวข้อง (หน้ากรอกคะแนน/ส่งผลการเรียน) ไม่ให้เห็นโครงสร้างเก่า
+function clearSetupRelatedCaches() {
+  swrClear("getGradeSetup");
+  swrClear("getGradeEntryPageData");
+  swrClear("getFinalizePageData");
+}
 
 document.addEventListener("DOMContentLoaded", async function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
@@ -24,7 +38,27 @@ document.addEventListener("DOMContentLoaded", async function () {
   document.getElementById("subjectFilter").addEventListener("change", loadSetupIfReady);
   document.getElementById("semesterFilter").addEventListener("change", loadSetupIfReady);
   document.getElementById("subComponentForm").addEventListener("submit", handleSubmitSubComponent);
+
+  prefetchSetupData();
 });
+
+// โหลดล่วงหน้าโครงสร้างช่องคะแนนของทุกวิชาที่ครูสอน (ปีที่เลือก, ภาคเรียนที่เปิดบันทึกอยู่) ให้เลือกแล้วขึ้นทันที
+async function prefetchSetupData() {
+  const yearId = document.getElementById("yearFilter").value;
+  if (!yearId) return;
+  const semesters = await swrOpenSemesters();
+  const subjectIds = {};
+  myAssignments
+    .filter((a) => String(a.academicYearId) === String(yearId))
+    .forEach((a) => (subjectIds[a.subjectId] = true));
+  const items = [];
+  semesters.forEach((semester) => {
+    Object.keys(subjectIds).forEach((subjectId) => {
+      items.push({ action: "getGradeSetup", payload: { subjectId, academicYearId: yearId, semester } });
+    });
+  });
+  if (items.length > 0) swrPrefetch(items);
+}
 
 async function loadPageData(userId) {
   const result = await callApiCached("getTeacherSubjectsPageData", { userId });
@@ -62,6 +96,8 @@ function renderSubjectOptionsForYear() {
 }
 
 function clearSetup() {
+  setupLoadSeq++; // ยกเลิกผลของคำขอที่ยังค้างอยู่
+  isSetupStale = false;
   document.getElementById("subjectFilter").value = "";
   document.getElementById("semesterFilter").value = "";
   document.getElementById("setupContent").innerHTML = `
@@ -77,19 +113,45 @@ async function loadSetupIfReady() {
 
   if (!yearId || !subjectId || !semester) return;
 
-  document.getElementById("setupContent").innerHTML = `
-    <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>`;
+  const payload = { subjectId, academicYearId: yearId, semester };
+  const seq = ++setupLoadSeq;
+  isSetupStale = false;
 
-  const result = await callApi("getGradeSetup", { subjectId, academicYearId: yearId, semester });
-
-  if (result.status !== "success") {
+  // มีสำเนาในแคชจะแสดงทันที ไม่ต้องขึ้นข้อความกำลังโหลด
+  if (!swrRead(swrKey("getGradeSetup", payload))) {
     document.getElementById("setupContent").innerHTML = `
-      <div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${result.message}</div>`;
-    return;
+    <div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>`;
   }
 
-  currentSetup = result.data;
-  renderSetup();
+  await callApiSWR("getGradeSetup", payload, (result, meta) => {
+    if (seq !== setupLoadSeq) return; // ผู้ใช้เปลี่ยนตัวเลือกไปแล้ว ทิ้งผลของคำขอนี้
+
+    if (meta.fromCache) {
+      currentSetup = result.data;
+      isSetupStale = true;
+      renderSetup();
+      return;
+    }
+
+    if (meta.failed) {
+      if (meta.hadCache) {
+        Swal.fire({
+          icon: "warning",
+          title: "ยังอัปเดตข้อมูลล่าสุดไม่ได้",
+          text: "กำลังแสดงข้อมูลที่เคยโหลดไว้ (ดูได้อย่างเดียว) กรุณาเลือกวิชาใหม่อีกครั้งเมื่อเชื่อมต่อได้",
+          confirmButtonColor: "#268244",
+        });
+        return;
+      }
+      document.getElementById("setupContent").innerHTML = `
+      <div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${result.message}</div>`;
+      return;
+    }
+
+    isSetupStale = false;
+    currentSetup = result.data;
+    renderSetup();
+  });
 }
 
 function renderSetup() {
@@ -137,9 +199,19 @@ function renderSetup() {
     </div>`;
     })
     .join("");
+
+  if (isSetupStale) {
+    container.insertAdjacentHTML(
+      "afterbegin",
+      `<div class="bg-sky-50 border border-sky-200 text-sky-700 text-xs px-4 py-2.5 rounded-xl">
+        <i class="fa-solid fa-circle-notch fa-spin mr-1"></i>กำลังอัปเดตข้อมูลล่าสุดจากเซิร์ฟเวอร์ ปุ่มเพิ่ม/แก้ไข/ลบจะใช้งานได้ภายในไม่กี่วินาที
+      </div>`
+    );
+  }
 }
 
 function openSubComponentModal(componentId) {
+  if (isSetupStale) return notifySetupStale();
   document.getElementById("subComponentForm").reset();
   document.getElementById("f-componentId").value = componentId;
   document.getElementById("subComponentModal").classList.remove("hidden");
@@ -165,6 +237,7 @@ async function handleSubmitSubComponent(e) {
 
     if (result.status === "success") {
       closeSubComponentModal();
+      clearSetupRelatedCaches();
       await loadSetupIfReady();
       Swal.fire({ icon: "success", title: "บันทึกสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     } else {
@@ -180,6 +253,7 @@ async function handleSubmitSubComponent(e) {
 
 // แก้ไขชื่อช่องเก็บคะแนน (เฉพาะชื่อ ไม่กระทบคะแนนที่บันทึกไว้)
 async function renameSubComponent(subComponentId) {
+  if (isSetupStale) return notifySetupStale();
   const nameEl = document.querySelector(`[data-sub-name="${CSS.escape(String(subComponentId))}"]`);
   const currentName = nameEl ? nameEl.textContent : "";
 
@@ -202,6 +276,7 @@ async function renameSubComponent(subComponentId) {
   try {
     const result = await callApi("updateGradeSubComponent", { subComponentId, subComponentName: newName });
     if (result.status === "success") {
+      clearSetupRelatedCaches();
       await loadSetupIfReady();
       Swal.fire({ icon: "success", title: "แก้ไขชื่อสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     } else {
@@ -214,6 +289,7 @@ async function renameSubComponent(subComponentId) {
 
 // ลบช่องเก็บคะแนน: ถ้ามีคะแนนบันทึกไว้แล้ว Server จะบอกจำนวนที่กระทบ ต้องยืนยันอีกครั้งจึงลบจริง
 async function removeSubComponent(subComponentId) {
+  if (isSetupStale) return notifySetupStale();
   try {
     let result = await callApi("deleteGradeSubComponent", { subComponentId });
 
@@ -239,6 +315,7 @@ async function removeSubComponent(subComponentId) {
     }
 
     if (result.status === "success") {
+      clearSetupRelatedCaches();
       await loadSetupIfReady();
       Swal.fire({ icon: "success", title: "ลบสำเร็จ", confirmButtonColor: "#268244", timer: 1200, showConfirmButton: false });
     } else {
