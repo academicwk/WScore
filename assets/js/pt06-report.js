@@ -211,6 +211,11 @@ function scoreText(value) {
   return value === null || value === undefined ? "-" : Number(value).toFixed(2);
 }
 
+// คะแนนทั้งปีเป็นจำนวนเต็มเสมอ (ปัดแล้วที่ Server) — 9 ต.ค. 2569
+function yearScoreText(value) {
+  return value === null || value === undefined ? "-" : String(Math.round(Number(value)));
+}
+
 function submitStatusBadge(isSubmitted) {
   return isSubmitted
     ? `<span class="text-[11px] text-green-600 font-medium"><i class="fa-solid fa-circle-check mr-1"></i>ส่งแล้ว</span>`
@@ -244,7 +249,7 @@ function renderStudentReport(data, classId, studentId) {
             : `<div>${scoreText(s.semester2Total100)}</div><div class="mt-0.5">${submitStatusBadge(s.isSubmittedSem2)}</div>`
         }
       </td>
-      <td class="px-4 py-3 text-center text-gray-600">${isActivity ? "-" : scoreText(s.yearScore100)}</td>
+      <td class="px-4 py-3 text-center text-gray-600">${isActivity ? "-" : yearScoreText(s.yearScore100)}</td>
       <td class="px-4 py-3 text-center font-medium text-wsecondary">${
         isActivity ? s.activityResult || "-" : s.gradePoint !== null ? s.gradePoint.toFixed(1) : "-"
       }</td>
