@@ -3934,6 +3934,7 @@ function handleGetRegistrarTeacherProgressOverview(body) {
     });
 
   const STATUS_PRIORITY = { not_started: 0, in_progress: 1, complete: 2 };
+
   // วิชา x ห้อง ที่ครูกด "ส่งผลการเรียน" ของภาคเรียนปัจจุบันแล้ว (อ่านครั้งเดียว) — 8 ต.ค. 2569
   const submittedComboSet = {};
   getCachedSheetData("SemesterSubmissions", 60).forEach((r) => {
@@ -4005,7 +4006,7 @@ function handleGetRegistrarTeacherProgressOverview(body) {
         completeCount: completeCount,
         percent: percent,
         status: status,
-        submitted: submittedComboSet[subjectId + "|" + classId] === true,        
+        submitted: submittedComboSet[subjectId + "|" + classId] === true,
       };
     })
     .filter(Boolean)
@@ -5598,32 +5599,46 @@ function computeSemesterScores(components, scoresMap, studentId) {
 
   // แปลงสัดส่วนคะแนนหน่วย (ระหว่างภาค) ให้เป็นฐาน 70 และคะแนนปลายภาคให้เป็นฐาน 30 เสมอ
   // ไม่ว่าคะแนนเต็มจริงที่ตั้งค่าไว้ของแต่ละส่วนจะเป็นเท่าไหร่ก็ตาม แล้วจึงรวมกันเป็นคะแนนเต็ม 100
-  // 7 ต.ค. 2569: ปัดทศนิยม 2 ตำแหน่งตั้งแต่ขั้นนี้ ให้ "ค่าที่เก็บ = ค่าที่แสดง = ค่าที่ใช้ตัดเกรด" เสมอ
-  // (เดิมเก็บค่าเต็มไม่ปัด แต่แสดงปัด 2 ตำแหน่ง ทำให้บางกรณีแสดง 60.00 แต่ค่าจริง 59.999… ได้เกรดต่ำกว่าที่เห็น)
-  // คำนวณเป็น "สตางค์" (จำนวนเต็ม) เพื่อตัดปัญหาทศนิยมคลาดเคลื่อน: รวม = ระหว่างภาคที่ปัดแล้ว + ปลายภาคที่ปัดแล้ว
-  const raw70Cents = toScoreCents(unitsMax > 0 ? (unitsRaw / unitsMax) * 70 : 0);
+  // 9 ต.ค. 2569: กฎปัดเศษใหม่
+  //   - ระหว่างภาค (ฐาน 70) ของแต่ละภาคเรียน ปัดเป็น "จำนวนเต็ม" (ปัดขึ้นเมื่อ .5 พอดี)
+  //   - ปลายภาค (ฐาน 30) ไม่ปัดเป็นจำนวนเต็ม คงทศนิยม 2 ตำแหน่ง (คิดเป็นสตางค์ ตัดปัญหาเลขคลาดเคลื่อน)
+  //   - รวมภาคเรียน = ระหว่างภาค (จำนวนเต็ม) + ปลายภาค
+  const raw70 = toScoreInt(unitsMax > 0 ? (unitsRaw / unitsMax) * 70 : 0);
   const exam30Cents = toScoreCents(examMax > 0 ? (examRaw / examMax) * 30 : 0);
 
-  return { raw70: raw70Cents / 100, exam30: exam30Cents / 100, total100: (raw70Cents + exam30Cents) / 100 };
+  return { raw70: raw70, exam30: exam30Cents / 100, total100: (raw70 * 100 + exam30Cents) / 100 };
+}
+
+/**
+ * ปัดคะแนนเป็นจำนวนเต็ม (ปัดขึ้นเมื่อเป็น .5 พอดี) เช่น 54.5 -> 55, 54.49 -> 54
+ * เติมค่าเล็กน้อย (1e-6) กันเลขทศนิยมคลาดเคลื่อน ต้องใช้กฎเดียวกับหน้าเว็บ (scoreInt ใน grade-entry.js)
+ */
+function toScoreInt(x) {
+  return Math.round(Number(x) + 1e-6);
 }
 
 /**
  * ปัดคะแนนเป็นทศนิยม 2 ตำแหน่ง (ปัดขึ้นเมื่อเป็น .5 พอดี) คืนค่าเป็น "จำนวนเต็มหน่วยสตางค์" เช่น 79.995 -> 8000
  * เติมค่าเล็กน้อย (1e-6) เพื่อกันกรณีเลขทศนิยมคลาดเคลื่อน เช่น 49.99999999999999 ต้องได้ 5000 และ 0.285 ต้องได้ 29 ไม่ใช่ 28
- * ต้องใช้กฎเดียวกับหน้าเว็บ (fmtScore2 ใน grade-entry.js)
+ * ต้องใช้กฎเดียวกับหน้าเว็บ (scoreCents ใน grade-entry.js)
  */
 function toScoreCents(x) {
   return Math.round(Number(x) * 100 + 1e-6);
 }
 
 /**
- * คะแนนทั้งปีจากคะแนนของ 2 ภาคเรียน: ระหว่างภาค/ปลายภาค = ค่าเฉลี่ยของ 2 ภาค (ปัดขึ้นเมื่อ .5 พอดี) รวม = ระหว่างภาค + ปลายภาค
- * ทำให้ตัวเลขที่แสดงบวกกันได้พอดีเสมอ และเป็นค่าเดียวที่ใช้ตัดเกรด ทุกค่าเป็นทศนิยมไม่เกิน 2 ตำแหน่ง (7 ต.ค. 2569)
+ * คะแนนทั้งปีจากคะแนนของ 2 ภาคเรียน (9 ต.ค. 2569)
+ *   รวมปี   = ปัดเป็นจำนวนเต็ม( ค่าเฉลี่ยของ "คะแนนรวมภาคเรียน" ภาค 1 และภาค 2 )  <- ค่าเดียวที่ใช้ตัดเกรด
+ *   ระหว่างปี = ปัดเป็นจำนวนเต็ม( ค่าเฉลี่ยระหว่างภาค 2 ภาค )
+ *   ปลายปี  = รวมปี - ระหว่างปี  (ทำให้ ระหว่างปี + ปลายปี = รวมปี พอดีเสมอ)
  */
 function computeYearScores(sem1Raw70, sem1Exam30, sem2Raw70, sem2Exam30) {
-  const raw70Cents = Math.round((toScoreCents(sem1Raw70) + toScoreCents(sem2Raw70)) / 2);
-  const exam30Cents = Math.round((toScoreCents(sem1Exam30) + toScoreCents(sem2Exam30)) / 2);
-  return { raw70: raw70Cents / 100, exam30: exam30Cents / 100, total100: (raw70Cents + exam30Cents) / 100 };
+  const total1Cents = toScoreInt(sem1Raw70) * 100 + toScoreCents(sem1Exam30);
+  const total2Cents = toScoreInt(sem2Raw70) * 100 + toScoreCents(sem2Exam30);
+  const total100 = Math.round((total1Cents + total2Cents) / 200 + 1e-9);
+  const raw70 = Math.round((toScoreInt(sem1Raw70) + toScoreInt(sem2Raw70)) / 2 + 1e-9);
+  const exam30Cents = total100 * 100 - raw70 * 100;
+  return { raw70: raw70, exam30: exam30Cents / 100, total100: total100 };
 }
 
 // ===== ควบคุมช่วงเวลาเปิด/ปิดการบันทึกคะแนน (Sheet: GradingPeriods) =====
@@ -6659,6 +6674,77 @@ function handleGenerateSubjectReport(body) {
     // เก็บเฉพาะไฟล์ PDF ไว้ ลบไฟล์ Google Sheets ชั่วคราวที่ใช้กรอกข้อมูลทิ้ง
     copyFile.setTrashed(true);
   }
+}
+
+/**
+ * ===== ตรวจก่อนใช้กฎปัดเศษใหม่ (9 ต.ค. 2569) — "ไม่เขียนข้อมูลใดๆ" แสดงผลที่ View > Logs เท่านั้น =====
+ * เทียบผล (คะแนนปี/เกรด) ที่เก็บไว้ใน FinalResults กับผลที่จะได้เมื่อคำนวณด้วยกฎใหม่ แล้วแสดงเฉพาะนักเรียนที่ "เกรดเปลี่ยน"
+ * วิธีใช้: Apps Script Editor > เลือกฟังก์ชัน previewFinalResultsRoundingChanges > กด Run > ดูผลที่ View > Logs
+ * ถ้าพอใจผล ค่อยรัน recomputeAllFinalResultsWithRounding() เพื่อเขียนผลใหม่ลงชีตจริง
+ */
+function previewFinalResultsRoundingChanges() {
+  // อ่านตามตำแหน่งคอลัมน์ (เหมือน getFinalResultsByClass): 1 StudentID, 2 SubjectID, 3 ClassID, 4 AcademicYearID, 11 YearScore100, 12 GradePoint
+  const finalRows = SS.getSheetByName("FinalResults")
+    .getDataRange()
+    .getValues()
+    .slice(1)
+    .map((x) => ({ StudentID: x[1], SubjectID: x[2], ClassID: x[3], AcademicYearID: x[4], YearScore100: x[11], GradePoint: x[12] }));
+  const assignments = getSheetData("TeachingAssignments");
+  const done = {};
+  let totalStudents = 0;
+  let scoreChanged = 0;
+  let gradeChanged = 0;
+
+  finalRows.forEach((r) => {
+    const key = [r.SubjectID, r.AcademicYearID, r.ClassID].join("|");
+    if (done[key]) return;
+    done[key] = true;
+
+    const teacher = assignments.find(
+      (a) =>
+        String(a.SubjectID) === String(r.SubjectID) &&
+        String(a.AcademicYearID) === String(r.AcademicYearID) &&
+        String(a.ClassID) === String(r.ClassID)
+    );
+    if (!teacher) {
+      Logger.log("ข้าม (ไม่พบครูผู้สอนที่มอบหมาย): " + key);
+      return;
+    }
+
+    const built = buildFinalizeData(r.SubjectID, r.AcademicYearID, r.ClassID, teacher.TeacherUserID);
+    if (built.status !== "success") return;
+
+    const oldByStudent = {};
+    finalRows.forEach((f) => {
+      if (
+        String(f.SubjectID) === String(r.SubjectID) &&
+        String(f.AcademicYearID) === String(r.AcademicYearID) &&
+        String(f.ClassID) === String(r.ClassID)
+      ) {
+        oldByStudent[String(f.StudentID)] = f;
+      }
+    });
+
+    built.data.forEach((res) => {
+      const old = oldByStudent[String(res.studentId)];
+      if (!old || res.isActive === false) return;
+      totalStudents++;
+      if (Number(old.YearScore100) !== Number(res.yearScore100)) scoreChanged++;
+      if (Number(old.GradePoint) !== Number(res.gradePoint)) {
+        gradeChanged++;
+        Logger.log(
+          key + " | นักเรียน " + res.studentId + " " + (res.fullName || "") +
+            " | คะแนนปี " + old.YearScore100 + " -> " + res.yearScore100 +
+            " | เกรด " + old.GradePoint + " -> " + res.gradePoint
+        );
+      }
+    });
+  });
+
+  Logger.log(
+    "สรุป: ตรวจ " + totalStudents + " รายการ | คะแนนปีเปลี่ยน " + scoreChanged + " | เกรดเปลี่ยน " + gradeChanged +
+      " (ยังไม่มีการเขียนข้อมูลใดๆ)"
+  );
 }
 
 /**
