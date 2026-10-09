@@ -89,36 +89,61 @@ async function reloadFromFilters() {
   loadPt12(yearId, classId, Number(document.getElementById("semesterFilter").value));
 }
 
+let pt12LoadSeq = 0;
+let pt12IsStale = false;
+
+function initPt12Data(data) {
+  pt12Data = data;
+  pt12Failed = new Set();
+  pt12Dirty = new Set();
+  pt12Version = {};
+  pt12Comments = {};
+  pt12Data.students.forEach((st) => {
+    pt12Comments[st.studentId] = {};
+    PT12_COMMENT_FIELDS.forEach((f) => (pt12Comments[st.studentId][f.key] = st[f.key] || ""));
+  });
+}
+
 async function loadPt12(yearId, classId, semester) {
   const content = document.getElementById("pt12Content");
-  content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-gray-400 text-sm">กำลังโหลดข้อมูล...</div>`;
+  const seq = ++pt12LoadSeq;
+  let shownFromCache = false;
+  pt12IsStale = false;
 
-  try {
-    const result = await callApi("getPt12PageData", {
-      userId: pt12User.userId,
-      academicYearId: yearId,
-      classId,
-      semester,
-    });
+  const payload = { userId: pt12User.userId, academicYearId: yearId, classId, semester };
 
-    if (result.status !== "success") {
-      content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${escapeHtml(result.message)}</div>`;
+  await callApiSWR("getPt12PageData", payload, (result, meta) => {
+    if (seq !== pt12LoadSeq) return; // เปลี่ยนตัวกรองไปแล้ว ทิ้งผลของคำขอนี้
+
+    if (meta.fromCache) {
+      if (!result || result.status !== "success") return;
+      // แสดงจากแคชก่อน แต่ล็อกการแก้ไขจนกว่าข้อมูลล่าสุดจะมา
+      initPt12Data(Object.assign({}, result.data, { isEditable: false }));
+      pt12IsStale = true;
+      shownFromCache = true;
+      renderPt12();
+      content.insertAdjacentHTML(
+        "afterbegin",
+        `<div id="pt12StaleBanner" class="mb-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2"><i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i>กำลังตรวจสอบข้อมูลล่าสุด... (ล็อกการแก้ไขชั่วคราว)</div>`
+      );
       return;
     }
 
-    pt12Data = result.data;
-    pt12Failed = new Set();
-    pt12Dirty = new Set();
-    pt12Version = {};
-    pt12Comments = {};
-    pt12Data.students.forEach((st) => {
-      pt12Comments[st.studentId] = {};
-      PT12_COMMENT_FIELDS.forEach((f) => (pt12Comments[st.studentId][f.key] = st[f.key] || ""));
-    });
+    if (meta.failed || !result || result.status !== "success") {
+      if (shownFromCache) {
+        const b = document.getElementById("pt12StaleBanner");
+        if (b) b.innerHTML = '<i class="fa-solid fa-triangle-exclamation mr-1.5"></i>เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ แสดงข้อมูลเดิมแบบอ่านอย่างเดียว กรุณาเลือกใหม่อีกครั้ง';
+        return;
+      }
+      const msg = meta.failed || !result ? "เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ" : result.message;
+      content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">${escapeHtml(msg)}</div>`;
+      return;
+    }
+
+    pt12IsStale = false;
+    initPt12Data(result.data);
     renderPt12();
-  } catch (err) {
-    content.innerHTML = `<div class="bg-white rounded-xl shadow p-6 text-center text-red-500 text-sm">เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ</div>`;
-  }
+  });
 }
 
 function renderFilters() {
@@ -635,6 +660,7 @@ function saveRows(studentIds) {
       });
 
       if (result.status === "success") {
+        if (typeof swrClear === "function") swrClear("getPt12PageData");
         ids.forEach((id) => {
           pt12Failed.delete(id);
           if ((pt12Version[id] || 0) === versions[id]) {
