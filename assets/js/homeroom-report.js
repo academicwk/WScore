@@ -9,6 +9,8 @@
 let currentClasses = [];
 let currentStudents = [];
 let currentClassId = null;
+let classDataLoadSeq = 0; // ลำดับการโหลด ใช้ทิ้งผลของคำขอเก่าเมื่อเปลี่ยนห้องไปแล้ว (8 ต.ค. 2569)
+let classDataPrefetched = false;
 
 document.addEventListener("DOMContentLoaded", function () {
   const userData = JSON.parse(sessionStorage.getItem("wscore_user") || "null");
@@ -117,20 +119,19 @@ async function generateClassReport(userId, classId) {
 
 async function loadClassData(userId, classId) {
   const studentSelect = document.getElementById("studentFilter");
-  studentSelect.innerHTML = `<option value="">- กำลังโหลดข้อมูล... -</option>`;
+  const payload = { userId, classId };
+  const seq = ++classDataLoadSeq;
   clearReport();
 
-  try {
-    const result = await callApi("getHomeroomSummaryPageData", { userId, classId });
+  // มีสำเนาในแคชจะแสดงรายชื่อทันที ไม่ต้องขึ้นข้อความกำลังโหลด
+  if (!swrRead(swrKey("getHomeroomSummaryPageData", payload))) {
+    studentSelect.innerHTML = `<option value="">- กำลังโหลดข้อมูล... -</option>`;
+  }
 
-    if (result.status !== "success") {
-      studentSelect.innerHTML = `<option value="">- เกิดข้อผิดพลาด -</option>`;
-      return;
-    }
-
-    renderClassFilter(result.data);
-    currentClassId = result.data.selectedClassId;
-    currentStudents = result.data.students;
+  const applyClassData = (data) => {
+    renderClassFilter(data);
+    currentClassId = data.selectedClassId;
+    currentStudents = data.students;
 
     if (currentStudents.length === 0) {
       studentSelect.innerHTML = `<option value="">- ไม่มีนักเรียนในห้องนี้ -</option>`;
@@ -142,9 +143,37 @@ async function loadClassData(userId, classId) {
       currentStudents
         .map((s) => `<option value="${s.studentId}">เลขที่ ${s.studentNumber} - ${s.fullName}</option>`)
         .join("");
-  } catch (err) {
-    studentSelect.innerHTML = `<option value="">- เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ -</option>`;
-  }
+  };
+
+  await callApiSWR("getHomeroomSummaryPageData", payload, (result, meta) => {
+    if (seq !== classDataLoadSeq) return; // เปลี่ยนห้องไปแล้ว ทิ้งผลของคำขอนี้
+
+    if (meta.fromCache) {
+      applyClassData(result.data);
+      return;
+    }
+
+    if (meta.failed) {
+      if (meta.hadCache) return; // มีรายชื่อจากแคชแสดงอยู่แล้ว เงียบไว้
+      studentSelect.innerHTML = meta.offline
+        ? `<option value="">- เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ -</option>`
+        : `<option value="">- เกิดข้อผิดพลาด -</option>`;
+      return;
+    }
+
+    if (result.data.selectedClassId) {
+      swrSet("getHomeroomSummaryPageData", { userId, classId: result.data.selectedClassId }, result);
+    }
+    // รายชื่อเหมือนที่แสดงจากแคชไปแล้ว ไม่ต้องวาดใหม่ (กันตัวเลือกนักเรียนที่ครูเลือกไว้หาย)
+    if (!(meta.hadCache && !meta.changed)) applyClassData(result.data);
+
+    if (!classDataPrefetched && Array.isArray(result.data.classOptions) && result.data.classOptions.length > 1) {
+      classDataPrefetched = true;
+      swrPrefetch(
+        result.data.classOptions.map((c) => ({ action: "getHomeroomSummaryPageData", payload: { userId, classId: c.classId } }))
+      );
+    }
+  });
 }
 
 function renderClassFilter(data) {
