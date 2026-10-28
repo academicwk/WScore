@@ -581,13 +581,30 @@ function getSheetColumnsData(sheetName, columnNames) {
  * ฟังก์ชันที่เขียนข้อมูลลงตารางเหล่านี้ต้องเรียก invalidateSheetCache(sheetName) ทันทีหลังเขียนเสมอ
  * ไม่เช่นนั้นข้อมูลที่อ่านได้อาจไม่ใช่ข้อมูลล่าสุดจนกว่าแคชจะหมดอายุ
  */
+// ที่จำชั่วคราว "ภายในคำขอเดียว" (เปิดเฉพาะงานที่วนอ่านชีตเดิมซ้ำๆ เช่น ออกรายงานทั้งห้อง) — 28 ต.ค. 2569
+// ทุกคำขอ (doPost) เริ่มด้วยตัวแปรว่างใหม่เสมอ จึงไม่ค้างข้ามคำขอ ผู้เรียกต้องไม่แก้ไขอาร์เรย์ที่ได้รับกลับไป (ใช้ filter/find เท่านั้น)
+// เหตุผล: ข้อมูลชีตที่ใหญ่เกิน 100KB ใส่แคชไม่ได้ ทำให้ getCachedSheetData อ่านชีตจริงซ้ำทุกครั้งที่เรียก และแม้อยู่ในแคชก็ต้อง parse JSON ซ้ำทุกครั้ง
+let SHEET_MEMO = null;
+
+function beginSheetMemo() {
+  SHEET_MEMO = {};
+}
+
+function endSheetMemo() {
+  SHEET_MEMO = null;
+}
+
 function getCachedSheetData(sheetName, ttlSeconds) {
+  if (SHEET_MEMO && SHEET_MEMO[sheetName]) return SHEET_MEMO[sheetName];
+
   const cache = CacheService.getScriptCache();
   const key = "sheetcache_" + sheetName;
   const cached = cache.get(key);
   if (cached) {
     try {
-      return JSON.parse(cached);
+      const parsed = JSON.parse(cached);
+      if (SHEET_MEMO) SHEET_MEMO[sheetName] = parsed;
+      return parsed;
     } catch (err) {
       // แคชเสีย ข้ามไปอ่านจากชีตจริงแทน
     }
@@ -599,11 +616,13 @@ function getCachedSheetData(sheetName, ttlSeconds) {
   } catch (err) {
     // ข้อมูลอาจใหญ่เกิน 100KB ต่อ cache key ข้ามการแคชได้ ไม่กระทบการทำงานหลัก
   }
+  if (SHEET_MEMO) SHEET_MEMO[sheetName] = data;
   return data;
 }
 
 function invalidateSheetCache(sheetName) {
   CacheService.getScriptCache().remove("sheetcache_" + sheetName);
+  if (SHEET_MEMO) delete SHEET_MEMO[sheetName];
 }
 
 /**
@@ -920,14 +939,19 @@ function findRowIndexByColumnValue(sheetName, columnName, value) {
  * ดึงรายการรายวิชาทั้งหมด
  */
 function handleGetSubjects() {
+  if (SHEET_MEMO && SHEET_MEMO["__subjects"]) return { status: "success", data: SHEET_MEMO["__subjects"] };
+
   const cache = CacheService.getScriptCache();
   const cached = cache.get("subjects");
   if (cached) {
-    return { status: "success", data: JSON.parse(cached) };
+    const parsed = JSON.parse(cached);
+    if (SHEET_MEMO) SHEET_MEMO["__subjects"] = parsed;
+    return { status: "success", data: parsed };
   }
 
   const subjects = getSheetData("Subjects");
   cache.put("subjects", JSON.stringify(subjects), 300);
+  if (SHEET_MEMO) SHEET_MEMO["__subjects"] = subjects;
   return { status: "success", data: subjects };
 }
 
@@ -2375,7 +2399,9 @@ function fitFontSizeToColumnWidth(text, columnWidthPx, baseFontSize) {
  * ตารางเริ่มแถว 8 เผื่อไว้ 22 แถว (8-29) — แทรกแถวเพิ่มอัตโนมัติถ้ารายวิชาเกิน แล้วเลื่อนส่วนสรุปผลลงตามจำนวนแถวที่แทรก
  * printed = ผลลัพธ์จาก buildPt06PrintRows()
  */
-function fillPt06Sheet(sheet, student, enrollment, cls, academicYear, printed) {
+// metrics (ไม่บังคับ) = { subjectColWidthPx, baseSubjectFontSize } อ่านจากชีตเทมเพลตครั้งเดียวแล้วส่งเข้ามา (ชีตที่คัดลอกมามีค่าเท่ากันหมด)
+// ใช้ตอนออกรายงานทั้งห้อง เพื่อไม่ต้องเรียก API อ่านค่าเดิมซ้ำทุกคน — 28 ต.ค. 2569
+function fillPt06Sheet(sheet, student, enrollment, cls, academicYear, printed, metrics) {
   const TEMPLATE_FIRST_DATA_ROW = 8;
   const TEMPLATE_LAST_DATA_ROW = 29; // เผื่อไว้ 22 แถว (8-29) ในเทมเพลตต้นฉบับ
   const TEMPLATE_PROVISIONED_ROWS = TEMPLATE_LAST_DATA_ROW - TEMPLATE_FIRST_DATA_ROW + 1;
@@ -2448,21 +2474,26 @@ function fillPt06Sheet(sheet, student, enrollment, cls, academicYear, printed) {
   // (Apps Script ยังไม่มีฟีเจอร์ "Shrink to fit" ให้ใช้ตรงๆ จึงประมาณขนาดฟอนต์จากความยาวตัวอักษรเทียบความกว้างคอลัมน์เอง
   // อ้างอิงขนาดฟอนต์เดิมของเทมเพลตเป็นเพดานสูงสุด ไม่ขยายให้ใหญ่กว่าที่เทมเพลตตั้งไว้)
   // คอลัมน์ "ประเภท" ไม่ต้องย่อ (ข้อความสั้นพอดีคอลัมน์อยู่แล้วเสมอ ตามที่ผู้ใช้ต้องการ) — 26 ก.ย. 2569
-  const subjectColWidthPx = sheet.getColumnWidth(3) + sheet.getColumnWidth(4); // C:D merge = คอลัมน์ "รายวิชา"
-  const baseSubjectFontSize = sheet.getRange(TEMPLATE_FIRST_DATA_ROW, 3).getFontSize() || 10;
+  const subjectColWidthPx = metrics ? metrics.subjectColWidthPx : sheet.getColumnWidth(3) + sheet.getColumnWidth(4); // C:D merge = คอลัมน์ "รายวิชา"
+  const baseSubjectFontSize = metrics ? metrics.baseSubjectFontSize : sheet.getRange(TEMPLATE_FIRST_DATA_ROW, 3).getFontSize() || 10;
 
-  dataRows.forEach((rowValues, i) => {
-    const rowNum = TEMPLATE_FIRST_DATA_ROW + i;
-    sheet.getRange(rowNum, 3).setFontSize(fitFontSizeToColumnWidth(rowValues[2], subjectColWidthPx, baseSubjectFontSize));
-  });
+  // รวมแถวที่ติดกันและต้องใช้ขนาดฟอนต์เท่ากันเป็นก้อนเดียว แล้วตั้งทีเดียวต่อก้อน (เดิมเรียก API ทีละแถว ทำให้ช้ามาก) — 28 ต.ค. 2569
+  const fontSizes = dataRows.map((rowValues) => fitFontSizeToColumnWidth(rowValues[2], subjectColWidthPx, baseSubjectFontSize));
+  let groupStart = 0;
+  for (let i = 1; i <= fontSizes.length; i++) {
+    if (i === fontSizes.length || fontSizes[i] !== fontSizes[groupStart]) {
+      sheet.getRange(TEMPLATE_FIRST_DATA_ROW + groupStart, 3, i - groupStart, 1).setFontSize(fontSizes[groupStart]);
+      groupStart = i;
+    }
+  }
 
   // ----- สรุปผลการประเมิน (เลื่อนลงตาม rowOffset ถ้ามีการแทรกแถวด้านบน) -----
-  sheet.getRange(33 + rowOffset, 5).setValue(printed.basicCreditTotal);
-  sheet.getRange(33 + rowOffset, 6).setValue(printed.basicCreditEarned);
-  sheet.getRange(34 + rowOffset, 5).setValue(printed.extraCreditTotal);
-  sheet.getRange(34 + rowOffset, 6).setValue(printed.extraCreditEarned);
-  sheet.getRange(35 + rowOffset, 5).setValue(printed.basicCreditTotal + printed.extraCreditTotal);
-  sheet.getRange(35 + rowOffset, 6).setValue(printed.basicCreditEarned + printed.extraCreditEarned);
+  // แถว 33-35 คอลัมน์ E:F เขียนรวมทีเดียว (หน่วยกิตพื้นฐาน / เพิ่มเติม / รวม) ส่วน E36 (GPA) เขียนแยกเพราะ F36 ต้องไม่ถูกเขียนทับ
+  sheet.getRange(33 + rowOffset, 5, 3, 2).setValues([
+    [printed.basicCreditTotal, printed.basicCreditEarned],
+    [printed.extraCreditTotal, printed.extraCreditEarned],
+    [printed.basicCreditTotal + printed.extraCreditTotal, printed.basicCreditEarned + printed.extraCreditEarned],
+  ]);
   sheet.getRange(36 + rowOffset, 5).setValue(printed.gpa !== null ? printed.gpa : "-");
   // E37 (คุณลักษณะอันพึงประสงค์) / E38 (อ่านคิดวิเคราะห์เขียน) / E39 (ผลกิจกรรมพัฒนาผู้เรียนภาพรวม)
   // ยังไม่มีแหล่งข้อมูลในระบบ (รอโมดูลประเมินคุณลักษณะที่จะพัฒนาในอนาคต) — เว้นว่างไว้ตามที่ตกลงกับผู้ใช้ ไม่เขียนทับค่าเดิมในเทมเพลต
@@ -2577,6 +2608,7 @@ function handleGenerateHomeroomClassReport(body) {
   // ส่วนกรณีวิชายังส่งผลไม่ครบไม่ถือเป็นปัญหาอีกต่อไป เพราะเทมเพลตแสดง "-" ในคอลัมน์ที่ยังไม่มีข้อมูลได้เองแล้ว)
   // เตรียมข้อมูลที่ไม่ได้ขึ้นกับตัวนักเรียนแต่ละคน "ครั้งเดียว" ไว้ล่วงหน้าก่อนวนลูป (แก้ปัญหาอ่านทั้งชีตซ้ำทุกคนในห้อง
   // ทำให้ออกรายงานทั้งห้องช้ามาก — 27 ก.ย. 2569) : หา currentYearId ด้วยวิธีเดียวกับ buildHomeroomStudentReportData เป๊ะ
+  beginSheetMemo(); // อ่านชีตเดิมซ้ำในลูปนักเรียนให้เหลืออ่านครั้งเดียวต่อคำขอ — 28 ต.ค. 2569
   const academicYearsPreload = getSheetData("AcademicYears");
   academicYearsPreload.sort((a, b) => String(b.Year).localeCompare(String(a.Year)));
   const currentYearPreload =
@@ -2593,6 +2625,7 @@ function handleGenerateHomeroomClassReport(body) {
 
   const perStudent = [];
   const studentsWithIssue = [];
+  const t0 = Date.now();
 
   students.forEach((s) => {
     const built = buildHomeroomStudentReportData(userId, classId, s.studentId, preloaded);
@@ -2603,6 +2636,9 @@ function handleGenerateHomeroomClassReport(body) {
     const printed = buildPt06PrintRows(built.subjectRows);
     perStudent.push({ built: built, printed: printed });
   });
+
+  endSheetMemo();
+  Logger.log("ปถ.06 ทั้งห้อง: เตรียมข้อมูล " + perStudent.length + " คน ใช้เวลา " + (Date.now() - t0) + " ms");
 
   if (studentsWithIssue.length > 0) {
     return {
@@ -2631,17 +2667,27 @@ function handleGenerateHomeroomClassReport(body) {
     const templateSheetName = templateSheet.getName();
 
     // ขั้นที่ 1: คัดลอกชีตเปล่าให้ครบทุกคนก่อน (ยังไม่กรอกข้อมูล) เพื่อไม่ให้สำเนาคนหลังติดข้อมูลของคนก่อนหน้า
+    // อ่านค่าขนาดคอลัมน์/ฟอนต์ของเทมเพลตครั้งเดียว (ชีตที่คัดลอกมามีค่าเท่ากันหมด) ก่อนคัดลอกและกรอกข้อมูล
+    const templateMetrics = {
+      subjectColWidthPx: templateSheet.getColumnWidth(3) + templateSheet.getColumnWidth(4),
+      baseSubjectFontSize: templateSheet.getRange(8, 3).getFontSize() || 10,
+    };
+    const t1 = Date.now();
     const sheets = perStudent.map((entry, idx) =>
       idx === 0 ? templateSheet : templateSheet.copyTo(reportSs).setName(templateSheetName + "_" + (idx + 1))
     );
+    Logger.log("ปถ.06 ทั้งห้อง: คัดลอกชีต " + sheets.length + " แผ่น ใช้เวลา " + (Date.now() - t1) + " ms");
+    const t2 = Date.now();
 
     // ขั้นที่ 2: ค่อยกรอกข้อมูลแต่ละคนลงชีตของตัวเอง
     sheets.forEach((sheet, idx) => {
       const entry = perStudent[idx];
-      fillPt06Sheet(sheet, entry.built.student, entry.built.enrollment, entry.built.cls, entry.built.academicYear, entry.printed);
+      fillPt06Sheet(sheet, entry.built.student, entry.built.enrollment, entry.built.cls, entry.built.academicYear, entry.printed, templateMetrics);
     });
 
     SpreadsheetApp.flush();
+    Logger.log("ปถ.06 ทั้งห้อง: กรอกข้อมูล ใช้เวลา " + (Date.now() - t2) + " ms");
+    const t3 = Date.now();
 
     const exportUrl =
       "https://docs.google.com/spreadsheets/d/" +
@@ -2656,6 +2702,7 @@ function handleGenerateHomeroomClassReport(body) {
       return { status: "error", message: "ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง" };
     }
 
+    Logger.log("ปถ.06 ทั้งห้อง: ส่งออก PDF ใช้เวลา " + (Date.now() - t3) + " ms");
     const pdfBlob = pdfResponse.getBlob().setName(fileName + ".pdf");
     const pdfFile = reportsFolder.createFile(pdfBlob);
     const base64 = Utilities.base64Encode(pdfBlob.getBytes());
@@ -2776,6 +2823,7 @@ function handleGeneratePt06ClassReport(body) {
   // ส่วนกรณีวิชายังส่งผลไม่ครบไม่ถือเป็นปัญหาอีกต่อไป เพราะเทมเพลตแสดง "-" ในคอลัมน์ที่ยังไม่มีข้อมูลได้เองแล้ว)
   // เตรียมข้อมูลที่ไม่ได้ขึ้นกับตัวนักเรียนแต่ละคน "ครั้งเดียว" ไว้ล่วงหน้าก่อนวนลูป (แก้ปัญหาอ่านทั้งชีตซ้ำทุกคนในห้อง
   // ทำให้ออกรายงานทั้งห้องช้ามาก — 27 ก.ย. 2569) : ใช้ปีการศึกษาของห้องเรียนนี้เอง (ไม่ใช่ปีปัจจุบันของระบบ) ตามพฤติกรรมเดิม
+  beginSheetMemo(); // อ่านชีตเดิมซ้ำในลูปนักเรียนให้เหลืออ่านครั้งเดียวต่อคำขอ — 28 ต.ค. 2569
   const clsForPreload = getCachedSheetData("Classes", 60).find((c) => String(c.ClassID) === String(classId));
   const preloaded = clsForPreload
     ? {
@@ -2789,6 +2837,7 @@ function handleGeneratePt06ClassReport(body) {
 
   const perStudent = [];
   const studentsWithIssue = [];
+  const t0 = Date.now();
 
   students.forEach((s) => {
     const built = buildPt06StudentReportData(classId, s.studentId, preloaded);
@@ -2799,6 +2848,9 @@ function handleGeneratePt06ClassReport(body) {
     const printed = buildPt06PrintRows(built.subjectRows);
     perStudent.push({ built: built, printed: printed });
   });
+
+  endSheetMemo();
+  Logger.log("ปถ.06 ทั้งห้อง: เตรียมข้อมูล " + perStudent.length + " คน ใช้เวลา " + (Date.now() - t0) + " ms");
 
   if (studentsWithIssue.length > 0) {
     return {
@@ -2827,17 +2879,27 @@ function handleGeneratePt06ClassReport(body) {
     const templateSheetName = templateSheet.getName();
 
     // ขั้นที่ 1: คัดลอกชีตเปล่าให้ครบทุกคนก่อน (ยังไม่กรอกข้อมูล) เพื่อไม่ให้สำเนาคนหลังติดข้อมูลของคนก่อนหน้า
+    // อ่านค่าขนาดคอลัมน์/ฟอนต์ของเทมเพลตครั้งเดียว (ชีตที่คัดลอกมามีค่าเท่ากันหมด) ก่อนคัดลอกและกรอกข้อมูล
+    const templateMetrics = {
+      subjectColWidthPx: templateSheet.getColumnWidth(3) + templateSheet.getColumnWidth(4),
+      baseSubjectFontSize: templateSheet.getRange(8, 3).getFontSize() || 10,
+    };
+    const t1 = Date.now();
     const sheets = perStudent.map((entry, idx) =>
       idx === 0 ? templateSheet : templateSheet.copyTo(reportSs).setName(templateSheetName + "_" + (idx + 1))
     );
+    Logger.log("ปถ.06 ทั้งห้อง: คัดลอกชีต " + sheets.length + " แผ่น ใช้เวลา " + (Date.now() - t1) + " ms");
+    const t2 = Date.now();
 
     // ขั้นที่ 2: ค่อยกรอกข้อมูลแต่ละคนลงชีตของตัวเอง
     sheets.forEach((sheet, idx) => {
       const entry = perStudent[idx];
-      fillPt06Sheet(sheet, entry.built.student, entry.built.enrollment, entry.built.cls, entry.built.academicYear, entry.printed);
+      fillPt06Sheet(sheet, entry.built.student, entry.built.enrollment, entry.built.cls, entry.built.academicYear, entry.printed, templateMetrics);
     });
 
     SpreadsheetApp.flush();
+    Logger.log("ปถ.06 ทั้งห้อง: กรอกข้อมูล ใช้เวลา " + (Date.now() - t2) + " ms");
+    const t3 = Date.now();
 
     const exportUrl =
       "https://docs.google.com/spreadsheets/d/" +
@@ -2852,6 +2914,7 @@ function handleGeneratePt06ClassReport(body) {
       return { status: "error", message: "ไม่สามารถสร้างไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง" };
     }
 
+    Logger.log("ปถ.06 ทั้งห้อง: ส่งออก PDF ใช้เวลา " + (Date.now() - t3) + " ms");
     const pdfBlob = pdfResponse.getBlob().setName(fileName + ".pdf");
     const pdfFile = reportsFolder.createFile(pdfBlob);
     const base64 = Utilities.base64Encode(pdfBlob.getBytes());
